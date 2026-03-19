@@ -1,0 +1,22 @@
+[Unit]
+Description=BitSafe Password Manager Service
+Documentation=https://github.com/user/bitsafe
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/bitsafe-service
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/bitsafe %h/.config/bitsafe %t/bitsafe
+PrivateTmp=true
+
+# Expose the SSH agent socket path to dependent units
+Environment=SSH_AUTH_SOCK=%t/bitsafe/ssh-agent.sock
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,69 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/bitsafe-sdk",
+    "crates/bitsafe-protocol",
+    "crates/bitsafe-service",
+    "crates/bitsafe-cli",
+
+    "crates/bitsafe-common",
+    "crates/bitsafe-prompt",
+]
+exclude = [
+    "native/linux",
+    "native/macos",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/user/bitsafe"
+
+[workspace.dependencies]
+# Internal crates
+bitsafe-sdk = { path = "crates/bitsafe-sdk" }
+bitsafe-protocol = { path = "crates/bitsafe-protocol" }
+bitsafe-common = { path = "crates/bitsafe-common" }
+
+# Bitwarden SDK (pinned to specific revision)
+bitwarden-core = { git = "https://github.com/bitwarden/sdk-internal", rev = "9e3be8abbe71319620e964a90d79539bf9d19d9c", features = ["internal"] }
+bitwarden-crypto = { git = "https://github.com/bitwarden/sdk-internal", rev = "9e3be8abbe71319620e964a90d79539bf9d19d9c" }
+bitwarden-vault = { git = "https://github.com/bitwarden/sdk-internal", rev = "9e3be8abbe71319620e964a90d79539bf9d19d9c" }
+bitwarden-pm = { git = "https://github.com/bitwarden/sdk-internal", rev = "9e3be8abbe71319620e964a90d79539bf9d19d9c" }
+bitwarden-ssh = { git = "https://github.com/bitwarden/sdk-internal", rev = "9e3be8abbe71319620e964a90d79539bf9d19d9c" }
+bitwarden-auth = { git = "https://github.com/bitwarden/sdk-internal", rev = "9e3be8abbe71319620e964a90d79539bf9d19d9c" }
+bitwarden-sync = { git = "https://github.com/bitwarden/sdk-internal", rev = "9e3be8abbe71319620e964a90d79539bf9d19d9c" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Config
+toml = "0.8"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Password input
+rpassword = "7"
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Chrono
+chrono = { version = "0.4", features = ["serde"] }
+
+# Directories
+dirs = "6"

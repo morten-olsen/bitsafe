@@ -1,0 +1,89 @@
+version: "3"
+
+tasks:
+  build:
+    desc: Build all components for the current platform
+    cmds:
+      - cargo build --workspace --release
+      - cmd: |
+          echo "Building macOS native prompt..."
+          cd native/macos && swift build -c release
+        platforms: [darwin]
+      - cmd: |
+          if pkg-config --exists gtk4 libadwaita-1 2>/dev/null; then
+            echo "Building Linux native prompt..."
+            cd native/linux && cargo build --release
+          fi
+        platforms: [linux]
+
+  build-debug:
+    desc: Build debug (fast iteration)
+    cmds:
+      - cargo build --workspace
+
+  test:
+    desc: Run all tests
+    cmds:
+      - cargo test --workspace
+
+  dev:
+    desc: Build debug and run service
+    cmds:
+      - cargo build --workspace
+      - cmd: cargo run -p bitsafe-service
+
+  install:
+    desc: Install all binaries to ~/.cargo/bin
+    deps: [build]
+    cmds:
+      - cargo install --path crates/bitsafe-cli --force
+      - cargo install --path crates/bitsafe-service --force
+      - cargo install --path crates/bitsafe-prompt --force
+      - cmd: |
+          if [[ -f native/macos/.build/release/bitsafe-prompt-macos ]]; then
+            cp native/macos/.build/release/bitsafe-prompt-macos ~/.cargo/bin/
+            echo "Installed bitsafe-prompt-macos"
+          fi
+        platforms: [darwin]
+      - cmd: |
+          if [[ -f native/linux/target/release/bitsafe-prompt-linux ]]; then
+            cp native/linux/target/release/bitsafe-prompt-linux ~/.cargo/bin/
+            echo "Installed bitsafe-prompt-linux"
+          fi
+        platforms: [linux]
+      - echo "Done. Run 'bitsafe service install' to set up auto-start."
+
+  fmt:
+    desc: Format all code
+    cmds:
+      - cargo fmt --all
+      - cmd: swift-format format --in-place native/macos/Sources/*.swift 2>/dev/null || true
+        platforms: [darwin]
+
+  lint:
+    desc: Lint all code
+    cmds:
+      - cargo clippy --workspace -- -D warnings
+
+  prompt:linux:
+    desc: "Debug: run the Linux native prompt (GTK4)"
+    cmds:
+      - cd native/linux && cargo build
+      - native/linux/target/debug/bitsafe-prompt-linux {{.CLI_ARGS}}
+
+  prompt:macos:
+    desc: "Debug: run the macOS native prompt"
+    cmds:
+      - cd native/macos && swift build
+      - native/macos/.build/debug/bitsafe-prompt-macos {{.CLI_ARGS}}
+
+  prompt:generic:
+    desc: "Debug: run the generic (zenity/kdialog/osascript) prompt"
+    cmds:
+      - cargo run -p bitsafe-prompt -- {{.CLI_ARGS}}
+
+  clean:
+    desc: Clean all build artifacts
+    cmds:
+      - cargo clean
+      - rm -rf native/macos/.build native/linux/target
