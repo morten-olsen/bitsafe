@@ -26,7 +26,7 @@ if [ "$SENSITIVE_TOTAL" -gt 0 ]; then
 fi
 
 if [ -n "$OUTPUT" ]; then
-  echo "{\"hookSpecificOutput\":{\"additionalContext\":\"$OUTPUT\"}}"
+  echo "{\"stopReason\":\"$OUTPUT\"}"
 fi
 
 exit 0
