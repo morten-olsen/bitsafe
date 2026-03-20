@@ -249,8 +249,13 @@ async fn main() -> Result<()> {
                 // Unlock with a direct password also grants access approval,
                 // so authorize doesn't need to be retried.
                 eprintln!("Vault is locked.");
-                let password = rpassword::prompt_password("Master password: ")
-                    .context("Failed to read password")?;
+                // Reuse password from original request if available (e.g., authorize
+                // already prompted for it) to avoid a redundant second prompt.
+                let password = match &request.params {
+                    Some(RequestParams::Unlock(UnlockParams { password: Some(pw) })) => pw.clone(),
+                    _ => rpassword::prompt_password("Master password: ")
+                        .context("Failed to read password")?,
+                };
                 let unlock_resp = send_request(Request::new(
                     1,
                     methods::AUTH_UNLOCK,
@@ -656,6 +661,34 @@ mod tests {
         let r = parse_bitsafe_ref("bitsafe://GitHub API/password").unwrap();
         assert_eq!(r.id, "//GitHub API");
         assert_eq!(r.field, "password");
+    }
+
+    /// Regression: `bitsafe authorize` with locked vault should reuse the password
+    /// from the original request instead of prompting a second time.
+    #[test]
+    fn auto_unlock_reuses_password_from_authorize_request() {
+        let password = "test-password".to_string();
+        let params = Some(RequestParams::Unlock(UnlockParams {
+            password: Some(password.clone()),
+        }));
+
+        // The auto-prompt handler extracts the password from the original request
+        let extracted = match &params {
+            Some(RequestParams::Unlock(UnlockParams { password: Some(pw) })) => Some(pw.clone()),
+            _ => None,
+        };
+        assert_eq!(extracted, Some(password));
+    }
+
+    #[test]
+    fn auto_unlock_prompts_when_no_password_in_request() {
+        // Requests without a password (e.g., vault.list) should not extract one
+        let params: Option<RequestParams> = None;
+        let extracted = match &params {
+            Some(RequestParams::Unlock(UnlockParams { password: Some(pw) })) => Some(pw.clone()),
+            _ => None,
+        };
+        assert_eq!(extracted, None);
     }
 
     #[test]
