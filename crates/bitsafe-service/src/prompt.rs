@@ -3,12 +3,13 @@ use bitsafe_common::config::PromptMethod;
 use serde::Deserialize;
 use std::process::Stdio;
 use tokio::process::Command;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Deserialize)]
 pub struct PromptResponse {
     pub status: String,
     #[serde(default)]
-    pub credential: Option<String>,
+    pub credential: Option<Zeroizing<String>>,
     #[serde(default)]
     pub message: Option<String>,
 }
@@ -53,7 +54,7 @@ fn prompt_binary() -> String {
 }
 
 /// Spawn `bitsafe-prompt password` and return the master password.
-pub async fn prompt_password(method: &PromptMethod) -> Result<Option<String>> {
+pub async fn prompt_password(method: &PromptMethod) -> Result<Option<Zeroizing<String>>> {
     if *method == PromptMethod::None {
         anyhow::bail!("Interactive prompting is disabled (prompt.method = \"none\")");
     }
@@ -120,7 +121,7 @@ pub async fn prompt_pin(
     method: &PromptMethod,
     attempt: u32,
     max_attempts: u32,
-) -> Result<Option<String>> {
+) -> Result<Option<Zeroizing<String>>> {
     if *method == PromptMethod::None {
         anyhow::bail!("Interactive prompting is disabled");
     }

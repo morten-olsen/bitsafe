@@ -34,20 +34,18 @@ pub async fn run(config: Config) -> Result<()> {
 
     tracing::info!("Listening on {}", socket_path.display());
 
-    let shared_state = state::new_shared_state(config.session, config.prompt.method, config.access).await;
+    let shared_state = state::new_shared_state(config.prompt.method).await;
 
-    // Spawn the auto-lock worker
+    // Spawn the auto-lock worker (hardcoded 900s)
     let auto_lock_state = shared_state.clone();
-    let auto_lock_secs = config.service.auto_lock_seconds;
     tokio::spawn(async move {
-        sync_worker::auto_lock_worker(auto_lock_state, auto_lock_secs).await;
+        sync_worker::auto_lock_worker(auto_lock_state).await;
     });
 
-    // Spawn the background sync worker
+    // Spawn the background sync worker (hardcoded 300s)
     let sync_state = shared_state.clone();
-    let sync_interval = config.service.sync_interval_seconds;
     tokio::spawn(async move {
-        sync_worker::background_sync_worker(sync_state, sync_interval).await;
+        sync_worker::background_sync_worker(sync_state).await;
     });
 
     // Spawn the embedded SSH agent on a second socket

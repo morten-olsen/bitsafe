@@ -1,4 +1,4 @@
-use bitsafe_common::config::{AccessConfig, PromptMethod, SessionConfig};
+use bitsafe_common::config::{PromptMethod, PIN_MAX_ATTEMPTS};
 use bitsafe_sdk::auth::{LoginCredentials, LoginState};
 use std::collections::HashMap;
 use bitsafe_sdk::vault::{CipherDetail, CipherSummary, VaultFilter};
@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
+use zeroize::Zeroizing;
 
 /// The three top-level states the service can be in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +31,7 @@ impl std::fmt::Display for VaultState {
 /// PIN state within the Unlocked state.
 /// Created on unlock, destroyed on lock.
 pub struct Session {
-    pub pin: Option<String>,
+    pub pin: Option<Zeroizing<String>>,
     pub pin_attempts: u32,
 }
 
@@ -97,9 +98,7 @@ pub struct ServiceState {
     pub last_sync: Option<DateTime<Utc>>,
     pub last_activity: Instant,
     pub session: Option<Session>,
-    pub session_config: SessionConfig,
     pub prompt_method: PromptMethod,
-    pub access_config: AccessConfig,
     pub approval_cache: ApprovalCache,
     pub master_password_attempts: u32,
     pub last_password_attempt: Option<Instant>,
@@ -110,9 +109,24 @@ pub struct ServiceState {
 }
 
 impl ServiceState {
-    pub async fn new(session_config: SessionConfig, prompt_method: PromptMethod, access_config: AccessConfig) -> Self {
+    pub async fn new(prompt_method: PromptMethod) -> Self {
         // Try to restore persisted login state from a previous session.
         // If found, start in Locked state (need unlock, not full login).
+        let base = |vault_state, email, server_url, sdk, login_state| Self {
+            vault_state,
+            email,
+            server_url,
+            last_sync: None,
+            last_activity: Instant::now(),
+            session: None,
+            prompt_method: prompt_method.clone(),
+            approval_cache: ApprovalCache::new(),
+            master_password_attempts: 0,
+            last_password_attempt: None,
+            sdk,
+            login_state,
+        };
+
         match bitsafe_sdk::persist::load_login_state() {
             Ok(Some(login_state)) => {
                 let email = login_state.email.clone();
@@ -123,60 +137,15 @@ impl ServiceState {
                     server_url = %server_url,
                     "Restored login state from disk — starting in Locked state"
                 );
-                Self {
-                    vault_state: VaultState::Locked,
-                    email: Some(email),
-                    server_url: Some(server_url),
-                    last_sync: None,
-                    last_activity: Instant::now(),
-                    session: None,
-                    session_config,
-                    prompt_method,
-                    access_config: access_config.clone(),
-                    approval_cache: ApprovalCache::new(),
-                    master_password_attempts: 0,
-                    last_password_attempt: None,
-                    sdk: Some(sdk),
-                    login_state: Some(login_state),
-                }
+                base(VaultState::Locked, Some(email), Some(server_url), Some(sdk), Some(login_state))
             }
             Ok(None) => {
                 tracing::info!("No persisted login state — starting in LoggedOut state");
-                Self {
-                    vault_state: VaultState::LoggedOut,
-                    email: None,
-                    server_url: None,
-                    last_sync: None,
-                    last_activity: Instant::now(),
-                    session: None,
-                    session_config,
-                    prompt_method,
-                    access_config: access_config.clone(),
-                    approval_cache: ApprovalCache::new(),
-                    master_password_attempts: 0,
-                    last_password_attempt: None,
-                    sdk: None,
-                    login_state: None,
-                }
+                base(VaultState::LoggedOut, None, None, None, None)
             }
             Err(e) => {
                 tracing::warn!("Failed to load persisted login state: {e}");
-                Self {
-                    vault_state: VaultState::LoggedOut,
-                    email: None,
-                    server_url: None,
-                    last_sync: None,
-                    last_activity: Instant::now(),
-                    session: None,
-                    session_config,
-                    prompt_method,
-                    access_config: access_config.clone(),
-                    approval_cache: ApprovalCache::new(),
-                    master_password_attempts: 0,
-                    last_password_attempt: None,
-                    sdk: None,
-                    login_state: None,
-                }
+                base(VaultState::LoggedOut, None, None, None, None)
             }
         }
     }
@@ -221,7 +190,7 @@ impl ServiceState {
     pub async fn login(
         &mut self,
         email: String,
-        password: String,
+        password: Zeroizing<String>,
         server_url: Option<String>,
     ) -> Result<(), SdkError> {
         if self.vault_state != VaultState::LoggedOut {
@@ -309,7 +278,7 @@ impl ServiceState {
         Ok(())
     }
 
-    pub fn set_pin(&mut self, pin: String) -> Result<(), SdkError> {
+    pub fn set_pin(&mut self, pin: Zeroizing<String>) -> Result<(), SdkError> {
         if self.vault_state != VaultState::Unlocked {
             return Err(SdkError::VaultLocked);
         }
@@ -333,7 +302,7 @@ impl ServiceState {
             session.pin_attempts += 1;
             tracing::warn!(
                 attempt = session.pin_attempts,
-                max = self.session_config.pin_max_attempts,
+                max = PIN_MAX_ATTEMPTS,
                 "PIN verification failed"
             );
             false
@@ -343,7 +312,7 @@ impl ServiceState {
     pub fn pin_attempts_exceeded(&self) -> bool {
         self.session
             .as_ref()
-            .is_some_and(|s| s.pin_attempts >= self.session_config.pin_max_attempts)
+            .is_some_and(|s| s.pin_attempts >= PIN_MAX_ATTEMPTS)
     }
 
     /// Verify the master password against the server without reinitializing crypto.
@@ -387,48 +356,28 @@ pub type SharedState = Arc<RwLock<ServiceState>>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitsafe_common::config::{AccessConfig, PromptMethod, SessionConfig};
     use std::time::Duration;
-
-    fn test_config() -> (SessionConfig, PromptMethod) {
-        (
-            SessionConfig {
-                duration_seconds: 1,
-                pin_enabled: true,
-                pin_max_attempts: 3,
-                biometric_enabled: false,
-            },
-            PromptMethod::None,
-        )
-    }
-
-    fn test_access_config() -> AccessConfig {
-        AccessConfig {
-            require_approval: false, // disabled for unit tests
-            ..AccessConfig::default()
-        }
-    }
 
     // --- PIN tests ---
 
     #[test]
     fn pin_verify_correct() {
         let mut session = Session::new();
-        session.pin = Some("1234".into());
+        session.pin = Some(Zeroizing::new("1234".into()));
         assert!(session.verify_pin("1234"));
     }
 
     #[test]
     fn pin_verify_wrong() {
         let mut session = Session::new();
-        session.pin = Some("1234".into());
+        session.pin = Some(Zeroizing::new("1234".into()));
         assert!(!session.verify_pin("5678"));
     }
 
     #[test]
     fn pin_verify_wrong_length() {
         let mut session = Session::new();
-        session.pin = Some("1234".into());
+        session.pin = Some(Zeroizing::new("1234".into()));
         assert!(!session.verify_pin("123"));
         assert!(!session.verify_pin("12345"));
     }
@@ -442,7 +391,7 @@ mod tests {
     #[test]
     fn pin_verify_empty() {
         let mut session = Session::new();
-        session.pin = Some("".into());
+        session.pin = Some(Zeroizing::new("".into()));
         assert!(session.verify_pin(""));
         assert!(!session.verify_pin("1"));
     }
@@ -451,23 +400,20 @@ mod tests {
 
     #[tokio::test]
     async fn backoff_zero_on_first_attempt() {
-        let (sc, pm) = test_config();
-        let state = ServiceState::new(sc, pm, test_access_config()).await;
+        let state = ServiceState::new(PromptMethod::None).await;
         assert_eq!(state.master_password_backoff_remaining(), 0);
     }
 
     #[tokio::test]
     async fn backoff_zero_after_one_failure() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.record_password_failure(); // attempt 1
         assert_eq!(state.master_password_backoff_remaining(), 0);
     }
 
     #[tokio::test]
     async fn backoff_positive_after_two_failures() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.record_password_failure(); // attempt 1
         state.record_password_failure(); // attempt 2
         // Should have some backoff remaining (1s - elapsed)
@@ -476,8 +422,7 @@ mod tests {
 
     #[tokio::test]
     async fn backoff_resets_on_success() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.record_password_failure();
         state.record_password_failure();
         state.reset_password_attempts();
@@ -489,19 +434,17 @@ mod tests {
 
     #[tokio::test]
     async fn pin_set_returns_true_when_set() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.vault_state = VaultState::Unlocked;
         let mut session = Session::new();
-        session.pin = Some("1234".into());
+        session.pin = Some(Zeroizing::new("1234".into()));
         state.session = Some(session);
         assert!(state.pin_set());
     }
 
     #[tokio::test]
     async fn pin_set_returns_false_when_not_set() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.vault_state = VaultState::Unlocked;
         state.session = Some(Session::new());
         assert!(!state.pin_set());
@@ -511,11 +454,10 @@ mod tests {
 
     #[tokio::test]
     async fn verify_pin_success_resets_attempts() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.vault_state = VaultState::Unlocked;
         let mut session = Session::new();
-        session.pin = Some("1234".into());
+        session.pin = Some(Zeroizing::new("1234".into()));
         state.session = Some(session);
 
         assert!(state.verify_pin("1234"));
@@ -524,11 +466,10 @@ mod tests {
 
     #[tokio::test]
     async fn verify_pin_failure_increments_attempts() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.vault_state = VaultState::Unlocked;
         let mut session = Session::new();
-        session.pin = Some("1234".into());
+        session.pin = Some(Zeroizing::new("1234".into()));
         state.session = Some(session);
 
         assert!(!state.verify_pin("wrong"));
@@ -537,23 +478,21 @@ mod tests {
 
     #[tokio::test]
     async fn pin_attempts_exceeded_after_max() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.vault_state = VaultState::Unlocked;
         let mut session = Session::new();
-        session.pin = Some("1234".into());
+        session.pin = Some(Zeroizing::new("1234".into()));
         state.session = Some(session);
 
         state.verify_pin("wrong");
         state.verify_pin("wrong");
         state.verify_pin("wrong");
-        assert!(state.pin_attempts_exceeded()); // 3 >= pin_max_attempts (3)
+        assert!(state.pin_attempts_exceeded()); // 3 >= PIN_MAX_ATTEMPTS (3)
     }
 
     #[tokio::test]
     async fn touch_updates_last_activity() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         let before = state.last_activity;
         tokio::time::sleep(Duration::from_millis(10)).await;
         state.touch();
@@ -564,8 +503,7 @@ mod tests {
 
     #[tokio::test]
     async fn initial_state_depends_on_persisted_login() {
-        let (sc, pm) = test_config();
-        let state = ServiceState::new(sc, pm, test_access_config()).await;
+        let state = ServiceState::new(PromptMethod::None).await;
         // If persisted login exists on disk, starts Locked; otherwise LoggedOut
         assert!(
             state.vault_state == VaultState::LoggedOut || state.vault_state == VaultState::Locked,
@@ -576,8 +514,7 @@ mod tests {
 
     #[tokio::test]
     async fn logout_clears_everything() {
-        let (sc, pm) = test_config();
-        let mut state = ServiceState::new(sc, pm, test_access_config()).await;
+        let mut state = ServiceState::new(PromptMethod::None).await;
         state.vault_state = VaultState::Unlocked;
         state.email = Some("test@test.com".into());
         state.server_url = Some("https://vault.test.com".into());
@@ -592,8 +529,8 @@ mod tests {
     }
 }
 
-pub async fn new_shared_state(session_config: SessionConfig, prompt_method: PromptMethod, access_config: AccessConfig) -> SharedState {
+pub async fn new_shared_state(prompt_method: PromptMethod) -> SharedState {
     Arc::new(RwLock::new(
-        ServiceState::new(session_config, prompt_method, access_config).await,
+        ServiceState::new(prompt_method).await,
     ))
 }

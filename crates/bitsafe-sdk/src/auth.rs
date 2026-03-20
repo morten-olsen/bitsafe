@@ -13,10 +13,11 @@ use bitwarden_pm::PasswordManagerClient;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+use zeroize::Zeroizing;
 
 pub struct LoginCredentials {
     pub email: String,
-    pub password: String,
+    pub password: Zeroizing<String>,
     pub server_url: String,
 }
 

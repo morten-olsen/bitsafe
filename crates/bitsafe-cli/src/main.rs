@@ -8,6 +8,7 @@ use bitsafe_protocol::request::{
 use bitsafe_protocol::response::Response;
 use clap::{CommandFactory, Parser, Subcommand};
 use tokio::net::UnixStream;
+use zeroize::Zeroizing;
 use tracing_subscriber::EnvFilter;
 
 mod commands;
@@ -117,8 +118,8 @@ async fn main() -> Result<()> {
         ),
         Commands::Login { email, server } => {
             // Login is a one-time setup — prompt in the terminal.
-            let password = rpassword::prompt_password("Master password: ")
-                .context("Failed to read password")?;
+            let password = Zeroizing::new(rpassword::prompt_password("Master password: ")
+                .context("Failed to read password")?);
             (
                 Request::new(
                     1,
@@ -136,10 +137,10 @@ async fn main() -> Result<()> {
             // Default: delegate to the service's GUI prompt agent (RCE-resistant).
             // --terminal: prompt in the terminal for convenience (e.g. SSH sessions).
             let password = if terminal {
-                Some(
+                Some(Zeroizing::new(
                     rpassword::prompt_password("Master password: ")
                         .context("Failed to read password")?,
-                )
+                ))
             } else {
                 None
             };
@@ -195,8 +196,8 @@ async fn main() -> Result<()> {
             Box::new(commands::handle_totp),
         ),
         Commands::Authorize => {
-            let password = rpassword::prompt_password("Master password: ")
-                .context("Failed to read password")?;
+            let password = Zeroizing::new(rpassword::prompt_password("Master password: ")
+                .context("Failed to read password")?);
             (
                 Request::new(
                     1,
@@ -253,8 +254,8 @@ async fn main() -> Result<()> {
                 // already prompted for it) to avoid a redundant second prompt.
                 let password = match &request.params {
                     Some(RequestParams::Unlock(UnlockParams { password: Some(pw) })) => pw.clone(),
-                    _ => rpassword::prompt_password("Master password: ")
-                        .context("Failed to read password")?,
+                    _ => Zeroizing::new(rpassword::prompt_password("Master password: ")
+                        .context("Failed to read password")?),
                 };
                 let unlock_resp = send_request(Request::new(
                     1,
@@ -279,8 +280,8 @@ async fn main() -> Result<()> {
             1006 | 1008 | 1011 => {
                 // Session expired / prompt unavailable / access approval denied
                 eprintln!("Authorization required.");
-                let password = rpassword::prompt_password("Master password: ")
-                    .context("Failed to read password")?;
+                let password = Zeroizing::new(rpassword::prompt_password("Master password: ")
+                    .context("Failed to read password")?);
                 let auth_resp = send_request(Request::new(
                     1,
                     methods::AUTH_AUTHORIZE,
@@ -534,8 +535,8 @@ async fn handle_run(command: Vec<String>) -> Result<()> {
             match err.code {
                 1000 => {
                     eprintln!("Vault is locked.");
-                    let password = rpassword::prompt_password("Master password: ")
-                        .context("Failed to read password")?;
+                    let password = Zeroizing::new(rpassword::prompt_password("Master password: ")
+                        .context("Failed to read password")?);
                     let unlock_resp = send_request(Request::new(
                         1,
                         methods::AUTH_UNLOCK,
@@ -551,8 +552,8 @@ async fn handle_run(command: Vec<String>) -> Result<()> {
                 }
                 1006 | 1008 | 1011 => {
                     eprintln!("Authorization required.");
-                    let password = rpassword::prompt_password("Master password: ")
-                        .context("Failed to read password")?;
+                    let password = Zeroizing::new(rpassword::prompt_password("Master password: ")
+                        .context("Failed to read password")?);
                     let auth_resp = send_request(Request::new(
                         1,
                         methods::AUTH_AUTHORIZE,
@@ -667,7 +668,7 @@ mod tests {
     /// from the original request instead of prompting a second time.
     #[test]
     fn auto_unlock_reuses_password_from_authorize_request() {
-        let password = "test-password".to_string();
+        let password = Zeroizing::new("test-password".to_string());
         let params = Some(RequestParams::Unlock(UnlockParams {
             password: Some(password.clone()),
         }));

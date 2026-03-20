@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 /// A JSON-RPC 2.0 request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +44,7 @@ pub struct LoginParams {
     pub email: String,
     /// If omitted, the service will spawn the prompt agent to ask interactively.
     #[serde(default)]
-    pub password: Option<String>,
+    pub password: Option<Zeroizing<String>>,
     #[serde(default)]
     pub server_url: Option<String>,
 }
@@ -53,13 +54,13 @@ pub struct LoginParams {
 pub struct UnlockParams {
     /// If omitted, the service will spawn the prompt agent to ask interactively.
     #[serde(default)]
-    pub password: Option<String>,
+    pub password: Option<Zeroizing<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SetPinParams {
-    pub pin: String,
+    pub pin: Zeroizing<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,7 +160,7 @@ mod tests {
         let json = r#"{"password":"secret"}"#;
         let params: RequestParams = serde_json::from_str(json).unwrap();
         match params {
-            RequestParams::Unlock(up) => assert_eq!(up.password, Some("secret".into())),
+            RequestParams::Unlock(up) => assert_eq!(up.password, Some(Zeroizing::new("secret".into()))),
             _ => panic!("Expected Unlock"),
         }
     }
@@ -216,7 +217,7 @@ mod tests {
         let json = r#"{"pin":"1234"}"#;
         let params: RequestParams = serde_json::from_str(json).unwrap();
         match params {
-            RequestParams::SetPin(sp) => assert_eq!(sp.pin, "1234"),
+            RequestParams::SetPin(sp) => assert_eq!(*sp.pin, "1234"),
             _ => panic!("Expected SetPin"),
         }
     }

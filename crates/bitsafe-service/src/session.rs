@@ -1,4 +1,4 @@
-use bitsafe_common::config::PromptMethod;
+use bitsafe_common::config::{PromptMethod, PIN_MAX_ATTEMPTS, APPROVAL_SECONDS};
 use bitsafe_protocol::codec::{handshake_server, read_message, write_message};
 use bitsafe_protocol::request::{
     methods, LoginParams, ResolveRefsParams, Request, RequestParams, SetPinParams, SshSignParams,
@@ -54,20 +54,16 @@ pub async fn handle_client(stream: UnixStream, state: SharedState, peer_pid: Opt
     }
 }
 
-/// Resolve the scope key for the approval cache based on the configured scope.
-pub(crate) fn resolve_scope_key(scope: &bitsafe_common::config::ApprovalScope, peer_pid: Option<u32>) -> u32 {
-    use bitsafe_common::config::ApprovalScope;
-    match scope {
-        ApprovalScope::Session => {
-            // Walk to session leader PID; fall back to peer PID
-            peer_pid
-                .and_then(crate::peer::get_session_leader)
-                .or(peer_pid)
-                .unwrap_or(0)
-        }
-        ApprovalScope::Pid => peer_pid.unwrap_or(0),
-        ApprovalScope::Connection => 0, // Always 0 = never matches cached grant = always prompt
-    }
+/// Resolve the scope key for the approval cache.
+///
+/// Approval is always scoped to the terminal session leader PID.
+/// All processes in the same terminal session share one approval grant.
+pub(crate) fn resolve_scope_key(peer_pid: Option<u32>) -> u32 {
+    // Walk to session leader PID; fall back to peer PID
+    peer_pid
+        .and_then(crate::peer::get_session_leader)
+        .or(peer_pid)
+        .unwrap_or(0)
 }
 
 /// Methods that require vault access and are gated behind access approval.
@@ -117,13 +113,11 @@ async fn attempt_approval(
     // Try PIN if set
     let has_pin = state.read().await.pin_set();
     if has_pin {
-        let (attempt, pin_max) = {
+        let attempt = {
             let s = state.read().await;
-            (
-                s.session.as_ref().map(|s| s.pin_attempts + 1).unwrap_or(1),
-                s.session_config.pin_max_attempts,
-            )
+            s.session.as_ref().map(|s| s.pin_attempts + 1).unwrap_or(1)
         };
+        let pin_max = PIN_MAX_ATTEMPTS;
         match prompt::prompt_pin(prompt_method, attempt, pin_max).await {
             Ok(Some(pin)) => {
                 let mut s = state.write().await;
@@ -157,7 +151,7 @@ async fn dispatch(request: &Request, state: &SharedState, peer_pid: Option<u32>)
         // Reset inactivity timer on every vault operation (for auto-lock)
         state.write().await.touch();
 
-        let (require_approval, approval_seconds, approval_scope, prompt_method) = {
+        let prompt_method = {
             let s = state.read().await;
 
             // Must be unlocked
@@ -165,32 +159,26 @@ async fn dispatch(request: &Request, state: &SharedState, peer_pid: Option<u32>)
                 return Response::error(id, RpcError::vault_locked());
             }
 
-            (
-                s.access_config.require_approval,
-                s.access_config.approval_seconds,
-                s.access_config.approval_for.clone(),
-                s.prompt_method.clone(),
-            )
+            s.prompt_method.clone()
         };
 
-        if require_approval {
-            let scope_key = resolve_scope_key(&approval_scope, peer_pid);
-            let already_approved = state.read().await.approval_cache.is_approved(scope_key);
+        // Access approval is always required — not configurable.
+        let scope_key = resolve_scope_key(peer_pid);
+        let already_approved = state.read().await.approval_cache.is_approved(scope_key);
 
-            if !already_approved {
-                tracing::info!(scope_key, "Access approval required, prompting user");
+        if !already_approved {
+            tracing::info!(scope_key, "Access approval required, prompting user");
 
-                if attempt_approval(state, &prompt_method).await {
-                    let duration = std::time::Duration::from_secs(approval_seconds);
-                    state.write().await.approval_cache.grant(scope_key, duration);
-                    tracing::info!(scope_key, "Access approved");
-                } else {
-                    // Check if vault was locked by PIN exhaustion
-                    if state.read().await.vault_state != VaultState::Unlocked {
-                        return Response::error(id, RpcError::vault_locked());
-                    }
-                    return Response::error(id, RpcError::access_approval_denied());
+            if attempt_approval(state, &prompt_method).await {
+                let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
+                state.write().await.approval_cache.grant(scope_key, duration);
+                tracing::info!(scope_key, "Access approved");
+            } else {
+                // Check if vault was locked by PIN exhaustion
+                if state.read().await.vault_state != VaultState::Unlocked {
+                    return Response::error(id, RpcError::vault_locked());
                 }
+                return Response::error(id, RpcError::access_approval_denied());
             }
         }
     }
@@ -351,8 +339,8 @@ async fn handle_unlock(
             // When the password was provided directly (CLI/SSH), also grant
             // access approval — the user already proved identity.
             if password_direct {
-                let scope_key = resolve_scope_key(&s.access_config.approval_for, peer_pid);
-                let duration = std::time::Duration::from_secs(s.access_config.approval_seconds);
+                let scope_key = resolve_scope_key(peer_pid);
+                let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
                 s.approval_cache.grant(scope_key, duration);
                 tracing::info!(scope_key, "Access approved on unlock (direct password)");
             }
@@ -455,8 +443,8 @@ async fn handle_authorize(
             s.reset_password_attempts();
 
             // Grant scoped access approval
-            let scope_key = resolve_scope_key(&s.access_config.approval_for, peer_pid);
-            let duration = std::time::Duration::from_secs(s.access_config.approval_seconds);
+            let scope_key = resolve_scope_key(peer_pid);
+            let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
             s.approval_cache.grant(scope_key, duration);
 
             tracing::info!(scope_key, "Authorized via master password");

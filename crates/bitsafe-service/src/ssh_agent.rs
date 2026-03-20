@@ -9,6 +9,7 @@
 //! rejected — the user must pre-authorize via `bitsafe authorize` or the GUI
 //! prompt will be triggered (if available).
 
+use bitsafe_common::config::{PIN_MAX_ATTEMPTS, APPROVAL_SECONDS};
 use crate::prompt;
 use crate::session::resolve_scope_key;
 use crate::state::{SharedState, VaultState};
@@ -137,21 +138,9 @@ impl SshAgentSession {
     /// If approval is not cached, tries GUI prompt (biometric → PIN → password).
     /// If no GUI is available, returns false (user must pre-authorize via CLI).
     async fn check_approval(&self) -> Result<bool, ssh_agent_lib::error::AgentError> {
-        let (require_approval, approval_seconds, approval_scope, prompt_method) = {
-            let s = self.state.read().await;
-            (
-                s.access_config.require_approval,
-                s.access_config.approval_seconds,
-                s.access_config.approval_for.clone(),
-                s.prompt_method.clone(),
-            )
-        };
+        let prompt_method = self.state.read().await.prompt_method.clone();
 
-        if !require_approval {
-            return Ok(true);
-        }
-
-        let scope_key = resolve_scope_key(&approval_scope, self.peer_pid);
+        let scope_key = resolve_scope_key(self.peer_pid);
         let already_approved = {
             let s = self.state.read().await;
             s.approval_cache.is_approved(scope_key)
@@ -176,17 +165,14 @@ impl SshAgentSession {
                     // Biometric unavailable or failed — try PIN if set
                     let has_pin = self.state.read().await.pin_set();
                     if has_pin {
-                        let (attempt, pin_max) = {
+                        let attempt = {
                             let s = self.state.read().await;
-                            (
-                                s.session
-                                    .as_ref()
-                                    .map(|s| s.pin_attempts + 1)
-                                    .unwrap_or(1),
-                                s.session_config.pin_max_attempts,
-                            )
+                            s.session
+                                .as_ref()
+                                .map(|s| s.pin_attempts + 1)
+                                .unwrap_or(1)
                         };
-                        match prompt::prompt_pin(&prompt_method, attempt, pin_max).await {
+                        match prompt::prompt_pin(&prompt_method, attempt, PIN_MAX_ATTEMPTS).await {
                             Ok(Some(pin)) => self.state.write().await.verify_pin(&pin),
                             _ => false,
                         }
@@ -201,7 +187,7 @@ impl SshAgentSession {
             };
 
         if approved {
-            let duration = std::time::Duration::from_secs(approval_seconds);
+            let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
             self.state
                 .write()
                 .await

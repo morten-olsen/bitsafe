@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use serde::Serialize;
 use tracing_subscriber::EnvFilter;
+use zeroize::Zeroizing;
 
 mod backend;
 mod pin;
@@ -42,7 +43,7 @@ enum Mode {
 struct PromptResult {
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    credential: Option<String>,
+    credential: Option<Zeroizing<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
 }
@@ -51,7 +52,7 @@ impl PromptResult {
     fn ok_with_credential(credential: String) -> Self {
         Self {
             status: "ok".into(),
-            credential: Some(credential),
+            credential: Some(Zeroizing::new(credential)),
             message: None,
         }
     }

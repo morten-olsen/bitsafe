@@ -59,6 +59,9 @@ anyhow = "1"
 # Password input
 rpassword = "7"
 
+# Secret zeroization
+zeroize = { version = "1", features = ["serde"] }
+
 # UUID
 uuid = { version = "1", features = ["v4", "serde"] }
 

@@ -1,15 +1,12 @@
 use crate::state::{SharedState, VaultState};
+use bitsafe_common::config::{AUTO_LOCK_SECONDS, SYNC_INTERVAL_SECONDS};
 use std::time::Duration;
 use tokio::time;
 
 /// Periodically checks if the vault should be auto-locked due to inactivity.
-pub async fn auto_lock_worker(state: SharedState, auto_lock_seconds: u64) {
-    if auto_lock_seconds == 0 {
-        return; // Auto-lock disabled
-    }
-
+pub async fn auto_lock_worker(state: SharedState) {
     let check_interval = Duration::from_secs(30);
-    let timeout = Duration::from_secs(auto_lock_seconds);
+    let timeout = Duration::from_secs(AUTO_LOCK_SECONDS);
 
     loop {
         time::sleep(check_interval).await;
@@ -33,12 +30,8 @@ pub async fn auto_lock_worker(state: SharedState, auto_lock_seconds: u64) {
 }
 
 /// Periodically syncs the vault while unlocked.
-pub async fn background_sync_worker(state: SharedState, interval_seconds: u64) {
-    if interval_seconds == 0 {
-        return; // Background sync disabled
-    }
-
-    let interval = Duration::from_secs(interval_seconds);
+pub async fn background_sync_worker(state: SharedState) {
+    let interval = Duration::from_secs(SYNC_INTERVAL_SECONDS);
 
     loop {
         time::sleep(interval).await;

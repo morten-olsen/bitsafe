@@ -23,8 +23,9 @@ async fn main() -> Result<()> {
     let config = bitsafe_common::config::load_config();
     tracing::info!(
         server_url = %config.server.url,
-        auto_lock = config.service.auto_lock_seconds,
-        sync_interval = config.service.sync_interval_seconds,
+        auto_lock = bitsafe_common::config::AUTO_LOCK_SECONDS,
+        sync_interval = bitsafe_common::config::SYNC_INTERVAL_SECONDS,
+        approval_timeout = bitsafe_common::config::APPROVAL_SECONDS,
         "Starting bitsafe-service"
     );
 
