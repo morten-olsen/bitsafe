@@ -15,7 +15,7 @@ Arguments: $ARGUMENTS
 6. Compare transitive dependency versions against the SDK's `Cargo.lock`:
    - Check `digest`, `reqwest-middleware`, and any RustCrypto crates
    - Pin mismatches: `cargo update -p <crate>@<wrong> --precise <sdk-version>`
-7. Run `cargo build --workspace` — fix any compilation errors in `bitsafe-sdk`
+7. Run `cargo build --workspace` — fix any compilation errors in `grimoire-sdk`
 8. Run `cargo test --workspace`
 9. Update `UPGRADING.md` with the new revision, date, and any changes encountered
 10. Update `CLAUDE.md` if any SDK gotchas changed

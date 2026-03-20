@@ -16,12 +16,12 @@ In the current design, the CLI client prompts for the master password and sends 
 
 ## Decision
 
-### Prompt Agent: `bitsafe-prompt`
+### Prompt Agent: `grimoire-prompt`
 
 A separate binary that the **service** spawns as a subprocess when it needs interactive authentication from the user. The service itself remains headless.
 
 ```
-Client ──"unlock"──▶ Service ──spawns──▶ bitsafe-prompt (GUI)
+Client ──"unlock"──▶ Service ──spawns──▶ grimoire-prompt (GUI)
                          ◀──credential──┘        │
                          │                        ▼
                      unlocks vault          User sees dialog
@@ -47,7 +47,7 @@ Client ◀──"ok"───────────┘
 
 **Communication protocol** (service ↔ prompt agent):
 
-- Service spawns `bitsafe-prompt <mode> [flags]` as a subprocess
+- Service spawns `grimoire-prompt <mode> [flags]` as a subprocess
 - Prompt agent writes a single JSON line to stdout and exits:
 
 ```json
@@ -77,7 +77,7 @@ After a successful unlock, the service starts a **session timer**. While the ses
 ```
 
 - **Active**: All vault operations proceed normally. Timer resets on each successful re-verify.
-- **Expired**: Vault keys are still in memory (not locked), but operations are gated behind a biometric/PIN re-verification. The service spawns `bitsafe-prompt biometric` (or `pin` as fallback).
+- **Expired**: Vault keys are still in memory (not locked), but operations are gated behind a biometric/PIN re-verification. The service spawns `grimoire-prompt biometric` (or `pin` as fallback).
 - **Lock**: Scrubs keys entirely. Next access requires full master password.
 
 This means:
@@ -159,12 +159,12 @@ gui_backend = "auto"            # auto | zenity | kdialog | osascript
 - **Unified prompt**: Every client (CLI, SSH agent, rofi, GUI) gets the same interactive challenge without implementing prompting
 - **Biometric support**: Touch ID / fingerprint works for any client, not just GUI ones
 - **Session model**: Reduces friction — unlock once with password, re-verify with fingerprint
-- **Platform isolation**: All platform-specific code lives in `bitsafe-prompt`, keeping the service portable
+- **Platform isolation**: All platform-specific code lives in `grimoire-prompt`, keeping the service portable
 - **Backward compatible**: Clients that provide a password explicitly still work
 
 ### Negative
 
-- **New binary to distribute**: `bitsafe-prompt` must be installed alongside `bitsafe-service`
+- **New binary to distribute**: `grimoire-prompt` must be installed alongside `grimoire-service`
 - **Platform complexity**: Biometric integration varies across macOS/Linux/distros
 - **Security surface**: PIN in memory is weaker than master password re-entry, but matches 1Password's trade-off
 - **Subprocess spawning**: Adds latency to the unlock/re-verify path (acceptable for interactive operations)

@@ -17,16 +17,16 @@ We run Vaultwarden as a self-hosted password manager backend but want a better c
 
 ### Service/Client Architecture
 
-BitSafe uses a daemon/client split modeled after `ssh-agent` and `gpg-agent`:
+Grimoire uses a daemon/client split modeled after `ssh-agent` and `gpg-agent`:
 
 ```
   Clients (CLI, SSH Agent, GUI, rofi/dmenu)
        │
        │  Unix domain socket (JSON-RPC 2.0)
        │
-  bitsafe-service (daemon)
+  grimoire-service (daemon)
        │
-       │  bitsafe-sdk wrapper
+       │  grimoire-sdk wrapper
        │
   bitwarden sdk-internal (Rust crates)
        │
@@ -35,7 +35,7 @@ BitSafe uses a daemon/client split modeled after `ssh-agent` and `gpg-agent`:
   Vaultwarden
 ```
 
-**bitsafe-service** is a long-running daemon that:
+**grimoire-service** is a long-running daemon that:
 - Authenticates with Vaultwarden via `sdk-internal`
 - Holds the decrypted vault in memory when unlocked
 - Exposes operations over a Unix domain socket
@@ -44,8 +44,8 @@ BitSafe uses a daemon/client split modeled after `ssh-agent` and `gpg-agent`:
 **Clients** are thin and stateless:
 - Connect to the service socket, send a JSON-RPC request, print the result, exit
 - No crypto, no network calls, no vault state
-- `bitsafe-cli`: Interactive CLI for humans
-- `bitsafe-ssh-agent`: Speaks the SSH agent protocol, bridges to the service for key operations
+- `grimoire-cli`: Interactive CLI for humans
+- `grimoire-ssh-agent`: Speaks the SSH agent protocol, bridges to the service for key operations
 
 ### Language: Rust
 
@@ -58,15 +58,15 @@ All components are written in Rust:
 ### Workspace Structure
 
 ```
-bitsafe/
+grimoire/
   Cargo.toml              # Workspace root
   crates/
-    bitsafe-sdk/           # Wrapper over sdk-internal
-    bitsafe-protocol/      # IPC protocol definitions (shared)
-    bitsafe-service/       # The daemon
-    bitsafe-cli/           # CLI client
-    bitsafe-ssh-agent/     # SSH agent bridge
-    bitsafe-common/        # Shared utilities (socket paths, config)
+    grimoire-sdk/           # Wrapper over sdk-internal
+    grimoire-protocol/      # IPC protocol definitions (shared)
+    grimoire-service/       # The daemon
+    grimoire-cli/           # CLI client
+    grimoire-ssh-agent/     # SSH agent bridge
+    grimoire-common/        # Shared utilities (socket paths, config)
 ```
 
 ## Consequences
@@ -88,6 +88,6 @@ bitsafe/
 
 | Risk | Mitigation |
 |------|-----------|
-| sdk-internal API breaks | `bitsafe-sdk` wrapper isolates changes; pin to git rev |
+| sdk-internal API breaks | `grimoire-sdk` wrapper isolates changes; pin to git rev |
 | Vaultwarden API differences | Vaultwarden tracks upstream; patch in wrapper if needed |
 | Token expiry in long-running daemon | SDK handles refresh; test early |

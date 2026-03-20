@@ -1,6 +1,6 @@
 # SDK Upgrade Guide
 
-BitSafe depends on [bitwarden/sdk-internal](https://github.com/bitwarden/sdk-internal) pinned to a specific git revision.
+Grimoire depends on [bitwarden/sdk-internal](https://github.com/bitwarden/sdk-internal) pinned to a specific git revision.
 
 ## Current Pin
 
@@ -20,13 +20,13 @@ We pin to `9e3be8ab` (one commit before) to stay compatible with Vaultwarden and
 
 1. Check the [sdk-internal commit log](https://github.com/bitwarden/sdk-internal/commits/main) for changes since the current pin.
 2. **Check Vaultwarden compatibility** — look for API binding updates that may change endpoint paths or response models.
-3. Update the `rev` in `Cargo.toml` workspace dependencies (root + `crates/bitsafe-sdk/Cargo.toml`).
+3. Update the `rev` in `Cargo.toml` workspace dependencies (root + `crates/grimoire-sdk/Cargo.toml`).
 4. Run `cargo update` to refresh the lockfile.
 5. **Check transitive dependency versions** — compare against the SDK's `Cargo.lock` and pin if needed:
    ```bash
    cargo update -p <crate>@<resolved> --precise <sdk-lockfile-version>
    ```
-6. Run `cargo build` — fix any compilation errors in `crates/bitsafe-sdk/`.
+6. Run `cargo build` — fix any compilation errors in `crates/grimoire-sdk/`.
 7. Test against your Vaultwarden instance: login, unlock, sync, list.
 8. Update this file with the new revision and any API changes encountered.
 

@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/bitsafe-sdk",
-    "crates/bitsafe-protocol",
-    "crates/bitsafe-service",
-    "crates/bitsafe-cli",
+    "crates/grimoire-sdk",
+    "crates/grimoire-protocol",
+    "crates/grimoire-service",
+    "crates/grimoire-cli",
 
-    "crates/bitsafe-common",
-    "crates/bitsafe-prompt",
+    "crates/grimoire-common",
+    "crates/grimoire-prompt",
 ]
 exclude = [
     "native/linux",
@@ -18,13 +18,13 @@ exclude = [
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/user/bitsafe"
+repository = "https://github.com/user/grimoire"
 
 [workspace.dependencies]
 # Internal crates
-bitsafe-sdk = { path = "crates/bitsafe-sdk" }
-bitsafe-protocol = { path = "crates/bitsafe-protocol" }
-bitsafe-common = { path = "crates/bitsafe-common" }
+grimoire-sdk = { path = "crates/grimoire-sdk" }
+grimoire-protocol = { path = "crates/grimoire-protocol" }
+grimoire-common = { path = "crates/grimoire-common" }
 
 # Bitwarden SDK (pinned to specific revision)
 bitwarden-core = { git = "https://github.com/bitwarden/sdk-internal", rev = "9e3be8abbe71319620e964a90d79539bf9d19d9c", features = ["internal"] }

@@ -1,0 +1,22 @@
+[Unit]
+Description=Grimoire Password Manager Service
+Documentation=https://github.com/user/grimoire
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/grimoire-service
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/grimoire %h/.config/grimoire %t/grimoire
+PrivateTmp=true
+
+# Expose the SSH agent socket path to dependent units
+Environment=SSH_AUTH_SOCK=%t/grimoire/ssh-agent.sock
+
+[Install]
+WantedBy=default.target

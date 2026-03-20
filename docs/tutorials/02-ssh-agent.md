@@ -1,13 +1,13 @@
 # Tutorial: SSH Agent
 
-BitSafe includes an embedded SSH agent that serves keys stored in your Bitwarden vault. No private key files on disk. No `~/.ssh/id_ed25519` for someone to steal. The keys exist only in your vault and in memory while the service is unlocked.
+Grimoire includes an embedded SSH agent that serves keys stored in your Bitwarden vault. No private key files on disk. No `~/.ssh/id_ed25519` for someone to steal. The keys exist only in your vault and in memory while the service is unlocked.
 
 This tutorial covers setup, daily usage, git commit signing, and what to do when things go wrong.
 
 ## Prerequisites
 
-- BitSafe [installed](../install.md) and service running
-- Logged in and vault unlocked (`bitsafe status` shows `Unlocked`)
+- Grimoire [installed](../install.md) and service running
+- Logged in and vault unlocked (`grimoire status` shows `Unlocked`)
 - SSH keys stored in your Bitwarden/Vaultwarden vault as SSH key items
 - **Vaultwarden users**: your server must have the following flag set, otherwise SSH keys are silently filtered from sync:
 
@@ -17,18 +17,18 @@ EXPERIMENTAL_CLIENT_FEATURE_FLAGS=fido2-vault-credentials,ssh-key-vault-item,ssh
 
 Restart Vaultwarden after adding it.
 
-## Step 1: Point SSH at BitSafe
+## Step 1: Point SSH at Grimoire
 
 Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
 
 ```bash
-export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/bitsafe/ssh-agent.sock"
+export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/grimoire/ssh-agent.sock"
 ```
 
 Or use the helper command:
 
 ```bash
-export SSH_AUTH_SOCK="$(bitsafe service ssh-socket)"
+export SSH_AUTH_SOCK="$(grimoire service ssh-socket)"
 ```
 
 Reload your shell or source the profile:
@@ -45,10 +45,10 @@ ssh-add -l
 
 You should see your vault's SSH keys listed. If you see "The agent has no identities":
 
-1. Check the vault is unlocked: `bitsafe status`
-2. Check you have SSH keys in your vault: `bitsafe list --search ssh`
+1. Check the vault is unlocked: `grimoire status`
+2. Check you have SSH keys in your vault: `grimoire list --search ssh`
 3. Check Vaultwarden has the feature flags set (see prerequisites)
-4. Force a sync: `bitsafe sync`
+4. Force a sync: `grimoire sync`
 
 ## Step 3: Use SSH
 
@@ -63,7 +63,7 @@ On the first use, you'll see a GUI approval prompt (biometric/PIN/password). Thi
 If you're already connected to a machine via SSH (no display), pre-authorize before using SSH keys:
 
 ```bash
-bitsafe authorize          # prompts for master password in terminal
+grimoire authorize          # prompts for master password in terminal
 ssh git@github.com         # works — approval cached for this session
 ```
 
@@ -71,7 +71,7 @@ See the [Headless Tutorial](04-headless.md) for the full story.
 
 ## Git Commit Signing
 
-Git 2.34+ can sign commits with SSH keys. This is arguably the best reason to use BitSafe's SSH agent — your signing key never touches disk.
+Git 2.34+ can sign commits with SSH keys. This is arguably the best reason to use Grimoire's SSH agent — your signing key never touches disk.
 
 ### Setup
 
@@ -88,7 +88,7 @@ git config --global commit.gpgsign true
 
 ### How It Works
 
-When you run `git commit`, git asks BitSafe's SSH agent to sign the commit hash. The agent checks your access approval, prompts if needed, and returns the signature. The private key never leaves the service process.
+When you run `git commit`, git asks Grimoire's SSH agent to sign the commit hash. The agent checks your access approval, prompts if needed, and returns the signature. The private key never leaves the service process.
 
 ### Verifying Signatures
 
@@ -108,7 +108,7 @@ git log --show-signature -1
 The SSH agent is enabled by default:
 
 ```toml
-# ~/.config/bitsafe/config.toml
+# ~/.config/grimoire/config.toml
 [ssh_agent]
 enabled = true              # disable to skip the SSH agent socket entirely
 ```
@@ -118,16 +118,16 @@ Security parameters are hardcoded:
 - Approval lasts **5 minutes** per terminal session
 - Approval is scoped to the **terminal session leader PID** — all processes in the same terminal session share one approval grant
 
-Run `bitsafe authorize` once, and all `ssh` / `git` commands in that terminal work for 5 minutes.
+Run `grimoire authorize` once, and all `ssh` / `git` commands in that terminal work for 5 minutes.
 
 ## Auto-Lock Gotcha
 
 The vault auto-locks after inactivity (default: 15 minutes). **SSH agent requests do not reset the inactivity timer** — only CLI commands do.
 
-This means if you're only using SSH (no `bitsafe list`, `bitsafe status`, etc.), the vault will auto-lock and your SSH keys will disappear from `ssh-add -l`.
+This means if you're only using SSH (no `grimoire list`, `grimoire status`, etc.), the vault will auto-lock and your SSH keys will disappear from `ssh-add -l`.
 
 Workarounds:
-- Run `bitsafe status` periodically (resets the timer)
+- Run `grimoire status` periodically (resets the timer)
 - Any vault CLI command resets the timer
 
 ## Supported Key Types
@@ -143,20 +143,20 @@ If you have RSA or ECDSA keys in your vault, they'll be listed by `ssh-add -l` (
 
 ```bash
 # Is the service running?
-bitsafe status
+grimoire status
 
 # Is the vault unlocked?
-bitsafe unlock --terminal   # or just bitsafe list (auto-prompts)
+grimoire unlock --terminal   # or just grimoire list (auto-prompts)
 
 # Is SSH_AUTH_SOCK correct?
 echo $SSH_AUTH_SOCK
 ls -la $SSH_AUTH_SOCK
 
 # Do you have SSH keys in your vault?
-bitsafe list --search ssh
+grimoire list --search ssh
 
 # Has the vault synced recently?
-bitsafe sync
+grimoire sync
 ```
 
 ### `ssh` says "permission denied" or "signing failed"
@@ -164,7 +164,7 @@ bitsafe sync
 Most likely cause: access approval not granted.
 
 ```bash
-bitsafe authorize    # grants approval for this terminal session
+grimoire authorize    # grants approval for this terminal session
 ssh git@github.com   # retry
 ```
 
@@ -172,11 +172,11 @@ ssh git@github.com   # retry
 
 - Check the key type — only Ed25519 is supported
 - The key's private key data may be corrupt or in an unexpected format
-- Check service logs: `journalctl --user -u bitsafe -f` (Linux) or `/tmp/bitsafe-service.log` (macOS)
+- Check service logs: `journalctl --user -u grimoire -f` (Linux) or `/tmp/grimoire-service.log` (macOS)
 
 ### Everything was working, now it's not
 
-The vault probably auto-locked. Run `bitsafe status` to check, then unlock.
+The vault probably auto-locked. Run `grimoire status` to check, then unlock.
 
 ## What's Next
 

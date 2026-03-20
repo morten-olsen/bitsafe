@@ -1,28 +1,28 @@
 # Architecture
 
-BitSafe is a daemon/client password manager wrapping Bitwarden's `sdk-internal`.
+Grimoire is a daemon/client password manager wrapping Bitwarden's `sdk-internal`.
 
 ## Components
 
 ```
   Clients                          Service                         Backend
   ───────                          ───────                         ───────
-  bitsafe (CLI) ── Unix socket ─┐
-  GUI (future)  ── Unix socket ─┼─ bitsafe-service ──── HTTPS ─── Vaultwarden
+  grimoire (CLI) ── Unix socket ─┐
+  GUI (future)  ── Unix socket ─┼─ grimoire-service ──── HTTPS ─── Vaultwarden
   ssh/git       ── SSH agent  ──┘    ├── SSH agent (embedded, second socket)
-                                     ├── bitsafe-prompt (subprocess for GUI auth)
-                                     └── bitsafe-sdk (crypto only, SDK for decryption)
+                                     ├── grimoire-prompt (subprocess for GUI auth)
+                                     └── grimoire-sdk (crypto only, SDK for decryption)
 ```
 
 ## Crate Dependency Graph
 
 ```
-bitsafe-cli ────────┐
-                    ├── bitsafe-protocol ── (serde, tokio)
-bitsafe-service ────┤
-    │               └── bitsafe-common ── (dirs, toml)
-    ├── bitsafe-sdk ── bitwarden-pm (+ transitive sdk-internal crates)
-    └── bitsafe-prompt (spawned, not linked)
+grimoire-cli ────────┐
+                    ├── grimoire-protocol ── (serde, tokio)
+grimoire-service ────┤
+    │               └── grimoire-common ── (dirs, toml)
+    ├── grimoire-sdk ── bitwarden-pm (+ transitive sdk-internal crates)
+    └── grimoire-prompt (spawned, not linked)
 ```
 
 ## State Machine
@@ -48,14 +48,14 @@ Unlocked
 
 ## IPC Protocol
 
-- Transport: Unix socket at `$XDG_RUNTIME_DIR/bitsafe/bitsafe.sock`
+- Transport: Unix socket at `$XDG_RUNTIME_DIR/grimoire/grimoire.sock`
 - Framing: `[4 bytes u32 BE length][UTF-8 JSON payload]`
 - Protocol: JSON-RPC 2.0
 - Auth model: socket `0600` + `SO_PEERCRED` UID validation
 
 ## Configuration
 
-File: `~/.config/bitsafe/config.toml`
+File: `~/.config/grimoire/config.toml`
 
 ```toml
 [server]
@@ -92,10 +92,10 @@ enabled = true
 | SDK wrapper wiring | Done — own HTTP for auth/sync, SDK for crypto/decryption |
 | Background sync | Done — auto-sync on unlock + periodic (configurable) |
 | SSH agent | Done — embedded in service, Ed25519 + RSA signing |
-| TOTP | Done — `bitsafe totp <id>` and `bitsafe get <id> -f totp` |
-| Single-field output | Done — `bitsafe get <id> -f password` for piping |
-| Shell completions | Done — `bitsafe completions bash/zsh/fish` |
-| Service installer | Done — `bitsafe service install` (systemd + launchd) |
+| TOTP | Done — `grimoire totp <id>` and `grimoire get <id> -f totp` |
+| Single-field output | Done — `grimoire get <id> -f password` for piping |
+| Shell completions | Done — `grimoire completions bash/zsh/fish` |
+| Service installer | Done — `grimoire service install` (systemd + launchd) |
 | Persistent login | Done — survive service restart, only need unlock |
-| Secret injection | Done — `bitsafe run -- <cmd>` with exec semantics, no TTY breakage |
+| Secret injection | Done — `grimoire run -- <cmd>` with exec semantics, no TTY breakage |
 | Encrypted IPC codec | Not started |

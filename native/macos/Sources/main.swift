@@ -27,7 +27,7 @@ func promptPassword(message: String) {
     app.setActivationPolicy(.accessory)
 
     let alert = NSAlert()
-    alert.messageText = "BitSafe"
+    alert.messageText = "Grimoire"
     alert.informativeText = message
     alert.alertStyle = .informational
     alert.addButton(withTitle: "OK")
@@ -61,7 +61,7 @@ func promptPin(message: String) {
     app.setActivationPolicy(.accessory)
 
     let alert = NSAlert()
-    alert.messageText = "BitSafe"
+    alert.messageText = "Grimoire"
     alert.informativeText = message
     alert.alertStyle = .informational
     alert.addButton(withTitle: "OK")
@@ -122,7 +122,7 @@ func verifyBiometric(reason: String) {
 let args = CommandLine.arguments
 
 guard args.count >= 2 else {
-    fputs("Usage: bitsafe-prompt-macos <password|pin|biometric> [--message MSG] [--reason MSG] [--attempt N] [--max-attempts N]\n", stderr)
+    fputs("Usage: grimoire-prompt-macos <password|pin|biometric> [--message MSG] [--reason MSG] [--attempt N] [--max-attempts N]\n", stderr)
     exit(2)
 }
 
@@ -148,7 +148,7 @@ case "pin":
     promptPin(message: message)
 
 case "biometric":
-    let reason = getFlag("--reason", default: "BitSafe wants to verify your identity")
+    let reason = getFlag("--reason", default: "Grimoire wants to verify your identity")
     verifyBiometric(reason: reason)
 
 default:

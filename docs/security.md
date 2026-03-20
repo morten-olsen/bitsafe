@@ -1,10 +1,10 @@
 # Security
 
-This document covers how BitSafe protects sensitive data, known gaps, and planned improvements. It is a living document — update it when security-relevant code changes.
+This document covers how Grimoire protects sensitive data, known gaps, and planned improvements. It is a living document — update it when security-relevant code changes.
 
 ## Threat Model
 
-BitSafe is a single-user daemon holding decrypted vault keys in memory. The trust boundary is the Unix socket — same model as `ssh-agent`. We defend against:
+Grimoire is a single-user daemon holding decrypted vault keys in memory. The trust boundary is the Unix socket — same model as `ssh-agent`. We defend against:
 
 - **Other users on the same machine**: socket permissions + UID validation
 - **Swap/core dump exposure**: mlockall + PR_SET_DUMPABLE
@@ -23,7 +23,7 @@ We do **not** currently defend against:
 
 - `mlockall(MCL_CURRENT | MCL_FUTURE)` at service startup — prevents pages from being swapped to disk
 - `prctl(PR_SET_DUMPABLE, 0)` — prevents core dumps and ptrace from non-root
-- Both are **Linux-only** (`#[cfg(target_os = "linux")]` in `bitsafe-service/src/main.rs`)
+- Both are **Linux-only** (`#[cfg(target_os = "linux")]` in `grimoire-service/src/main.rs`)
 - Both **log a warning and continue** if they fail (e.g. memlock rlimit exhausted)
 
 ### What's delegated to the SDK
@@ -41,7 +41,7 @@ All password and PIN fields use `zeroize::Zeroizing<String>` — memory is zeroe
 - `PromptResponse.credential` from prompt subprocess
 - Local variables from `rpassword::prompt_password()` in the CLI
 
-The SDK uses `ZeroizingAllocator` internally for key material. Between BitSafe's zeroization of passwords and the SDK's zeroization of keys, the sensitive-data lifecycle is covered.
+The SDK uses `ZeroizingAllocator` internally for key material. Between Grimoire's zeroization of passwords and the SDK's zeroization of keys, the sensitive-data lifecycle is covered.
 
 ### Known gaps
 
@@ -56,7 +56,7 @@ The SDK uses `ZeroizingAllocator` internally for key material. Between BitSafe's
 
 ### Socket permissions
 
-- Runtime directory: `$XDG_RUNTIME_DIR/bitsafe/` (mode `0700`) or `/tmp/bitsafe-<id>/` fallback
+- Runtime directory: `$XDG_RUNTIME_DIR/grimoire/` (mode `0700`) or `/tmp/grimoire-<id>/` fallback
 - Socket file: mode `0600` (owner read/write only)
 - Stale sockets removed before binding
 
@@ -75,7 +75,7 @@ The SDK uses `ZeroizingAllocator` internally for key material. Between BitSafe's
 
 ### Known gaps
 
-- **Fallback socket path** uses `/tmp/bitsafe-<uid>/` (real UID via `libc::getuid()`). `$XDG_RUNTIME_DIR` is preferred when available (user-owned, `0700`, managed by systemd).
+- **Fallback socket path** uses `/tmp/grimoire-<uid>/` (real UID via `libc::getuid()`). `$XDG_RUNTIME_DIR` is preferred when available (user-owned, `0700`, managed by systemd).
 
 ## Authentication & Lockout
 
@@ -104,7 +104,7 @@ The SDK uses `ZeroizingAllocator` internally for key material. Between BitSafe's
 
 ### Binary discovery
 
-- Service looks for `bitsafe-prompt` next to its own binary (`current_exe()`), then falls back to `PATH`
+- Service looks for `grimoire-prompt` next to its own binary (`current_exe()`), then falls back to `PATH`
 - **PATH fallback is a risk** — an attacker who can place a binary earlier in PATH could intercept password prompts
 - Mitigation: install both binaries in the same directory
 
@@ -126,18 +126,18 @@ The SDK uses `ZeroizingAllocator` internally for key material. Between BitSafe's
 ### How lock works
 
 The SDK does not expose an explicit "clear keys" operation. Lock is implemented by:
-1. Dropping the `BitsafeClient` (which drops the inner `PasswordManagerClient`)
-2. Creating a fresh `BitsafeClient` for the same server URL
+1. Dropping the `GrimoireClient` (which drops the inner `PasswordManagerClient`)
+2. Creating a fresh `GrimoireClient` for the same server URL
 3. Preserving `LoginState` so re-unlock doesn't require re-login
 
 ### Concerns
 
-- **Key erasure depends on SDK Drop impl.** We assume `bitwarden-crypto`'s `KeyStore` zeros keys on drop (it uses `ZeroizingAllocator`), but this is not verified at the BitSafe layer.
+- **Key erasure depends on SDK Drop impl.** We assume `bitwarden-crypto`'s `KeyStore` zeros keys on drop (it uses `ZeroizingAllocator`), but this is not verified at the Grimoire layer.
 - **LoginState persists across lock.** The `LoginState` contains `MasterPasswordUnlockData` (encrypted user key, KDF params) and `WrappedAccountCryptographicState` (encrypted private key). These are encrypted — holding them in memory while locked is equivalent to what the official Bitwarden client does.
 
 ### Client-managed state repositories
 
-The SDK requires the consuming application to provide repositories for certain state types. We register in-memory `HashMap`-backed repositories (`bitsafe-sdk/src/state.rs`) for:
+The SDK requires the consuming application to provide repositories for certain state types. We register in-memory `HashMap`-backed repositories (`grimoire-sdk/src/state.rs`) for:
 
 - `LocalUserDataKeyState` — holds the user's data key wrapped by the user key (`EncString`)
 - `EphemeralPinEnvelopeState` — PIN envelope for ephemeral PIN unlock
@@ -154,7 +154,7 @@ The SDK requires the consuming application to provide repositories for certain s
 
 ## Persistent Login State
 
-After successful login, the service saves encrypted credentials to `~/.local/share/bitsafe/login.json` (mode `0600`) so subsequent service restarts only require `bitsafe unlock`, not a full re-login.
+After successful login, the service saves encrypted credentials to `~/.local/share/grimoire/login.json` (mode `0600`) so subsequent service restarts only require `grimoire unlock`, not a full re-login.
 
 **What's persisted** (all encrypted or non-sensitive):
 - Email and server URL
@@ -169,9 +169,9 @@ After successful login, the service saves encrypted credentials to `~/.local/sha
 - Session tokens (re-obtained on each unlock via the SDK)
 
 **Lifecycle:**
-- Created on `bitsafe login`
+- Created on `grimoire login`
 - Read on service startup → starts in `Locked` state if present
-- Deleted on `bitsafe logout`
+- Deleted on `grimoire logout`
 
 **Security notes:**
 - The persisted file contains the same encrypted material that the Bitwarden server returns on login — equivalent to what official Bitwarden clients cache locally
@@ -182,7 +182,7 @@ After successful login, the service saves encrypted credentials to `~/.local/sha
 
 - Security parameters (auto-lock timeout, approval duration, PIN max attempts, approval scope, approval requirement) are **hardcoded constants** — not configurable via config file. This prevents config-based downgrade attacks.
 - Only operational settings are configurable: server URL, prompt method (auto/gui/terminal/none), SSH agent enabled/disabled.
-- Config file at `~/.config/bitsafe/config.toml` — file permissions are not verified by the service (acceptable since the file contains no security-critical settings).
+- Config file at `~/.config/grimoire/config.toml` — file permissions are not verified by the service (acceptable since the file contains no security-critical settings).
 - Config is loaded once at startup — runtime changes require restart.
 
 ## Dependency Security
@@ -205,7 +205,7 @@ After successful login, the service saves encrypted credentials to `~/.local/sha
 
 | Priority | Issue | Status |
 |----------|-------|--------|
-| ~~High~~ | ~~No secret zeroization in BitSafe code~~ | **Fixed** — all password/PIN fields use `Zeroizing<String>` |
+| ~~High~~ | ~~No secret zeroization in Grimoire code~~ | **Fixed** — all password/PIN fields use `Zeroizing<String>` |
 | ~~High~~ | ~~macOS Swift string injection~~ | **Fixed** — `escape_swift()` and `escape_applescript()` sanitize all interpolated strings |
 | ~~High~~ | ~~No macOS peer credential check~~ | **Fixed** — UID check now uses `#[cfg(unix)]` (tokio's `peer_cred()` works on both Linux and macOS) |
 | ~~Medium~~ | ~~Socket fallback path uses PID not UID~~ | **Fixed** — uses `libc::getuid()` on Unix |

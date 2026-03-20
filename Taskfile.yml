@@ -30,28 +30,29 @@ tasks:
     desc: Build debug and run service
     cmds:
       - cargo build --workspace
-      - cmd: cargo run -p bitsafe-service
+      - cmd: cargo run -p grimoire-service
 
   install:
     desc: Install all binaries to ~/.cargo/bin
     deps: [build]
     cmds:
-      - cargo install --path crates/bitsafe-cli --force
-      - cargo install --path crates/bitsafe-service --force
-      - cargo install --path crates/bitsafe-prompt --force
+      - cargo install --path crates/grimoire-cli --force
+      - cargo install --path crates/grimoire-service --force
+      - cargo install --path crates/grimoire-prompt --force
       - cmd: |
-          if [[ -f native/macos/.build/release/bitsafe-prompt-macos ]]; then
-            cp native/macos/.build/release/bitsafe-prompt-macos ~/.cargo/bin/
-            echo "Installed bitsafe-prompt-macos"
+          if [[ -f native/macos/.build/release/grimoire-prompt-macos ]]; then
+            cp native/macos/.build/release/grimoire-prompt-macos ~/.cargo/bin/
+            echo "Installed grimoire-prompt-macos"
           fi
         platforms: [darwin]
       - cmd: |
-          if [[ -f native/linux/target/release/bitsafe-prompt-linux ]]; then
-            cp native/linux/target/release/bitsafe-prompt-linux ~/.cargo/bin/
-            echo "Installed bitsafe-prompt-linux"
+          if [[ -f native/linux/target/release/grimoire-prompt-linux ]]; then
+            cp native/linux/target/release/grimoire-prompt-linux ~/.cargo/bin/
+            echo "Installed grimoire-prompt-linux"
           fi
         platforms: [linux]
-      - echo "Done. Run 'bitsafe service install' to set up auto-start."
+      - ln -sf grimoire ~/.cargo/bin/grim
+      - echo "Done. Run 'grimoire service install' to set up auto-start."
 
   fmt:
     desc: Format all code
@@ -69,18 +70,18 @@ tasks:
     desc: "Debug: run the Linux native prompt (GTK4)"
     cmds:
       - cd native/linux && cargo build
-      - native/linux/target/debug/bitsafe-prompt-linux {{.CLI_ARGS}}
+      - native/linux/target/debug/grimoire-prompt-linux {{.CLI_ARGS}}
 
   prompt:macos:
     desc: "Debug: run the macOS native prompt"
     cmds:
       - cd native/macos && swift build
-      - native/macos/.build/debug/bitsafe-prompt-macos {{.CLI_ARGS}}
+      - native/macos/.build/debug/grimoire-prompt-macos {{.CLI_ARGS}}
 
   prompt:generic:
     desc: "Debug: run the generic (zenity/kdialog/osascript) prompt"
     cmds:
-      - cargo run -p bitsafe-prompt -- {{.CLI_ARGS}}
+      - cargo run -p grimoire-prompt -- {{.CLI_ARGS}}
 
   clean:
     desc: Clean all build artifacts

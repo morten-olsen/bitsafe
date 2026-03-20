@@ -6,7 +6,7 @@ Proposed
 
 ## Context
 
-The current prompt agent (`bitsafe-prompt`) shells out to `zenity`/`kdialog` on Linux and `osascript`/`swift -e` on macOS. This produces generic, unstyled dialogs that don't match the system's visual language. For a security tool, the prompt is the trust signal — it should look like a system authentication dialog, not a third-party app window.
+The current prompt agent (`grimoire-prompt`) shells out to `zenity`/`kdialog` on Linux and `osascript`/`swift -e` on macOS. This produces generic, unstyled dialogs that don't match the system's visual language. For a security tool, the prompt is the trust signal — it should look like a system authentication dialog, not a third-party app window.
 
 Additionally, the project now spans multiple languages and build systems:
 - Rust (cargo) — the core codebase
@@ -21,7 +21,7 @@ We need a developer experience that makes building, testing, and distributing al
 
 Replace the current shell-out approach with purpose-built native prompt binaries that look and feel like system authentication dialogs.
 
-#### macOS: SwiftUI binary (`bitsafe-prompt-macos`)
+#### macOS: SwiftUI binary (`grimoire-prompt-macos`)
 
 A small SwiftUI app (~200 lines) that:
 - Uses `NSPanel` (floating, always-on-top) for the password/PIN dialog
@@ -31,7 +31,7 @@ A small SwiftUI app (~200 lines) that:
 - Ships as a single binary (~500KB)
 
 ```
-bitsafe-prompt-macos/
+grimoire-prompt-macos/
   Sources/
     main.swift          # Entry point, argument parsing
     PasswordPrompt.swift # Password/PIN dialog
@@ -40,9 +40,9 @@ bitsafe-prompt-macos/
   Package.swift          # Swift Package Manager manifest
 ```
 
-**Build**: `swift build -c release` → produces `bitsafe-prompt-macos`
+**Build**: `swift build -c release` → produces `grimoire-prompt-macos`
 
-#### Linux: GTK4/libadwaita binary (`bitsafe-prompt-linux`)
+#### Linux: GTK4/libadwaita binary (`grimoire-prompt-linux`)
 
 A small Rust+GTK4 binary (~200 lines) using `gtk4-rs` and `libadwaita` that:
 - Uses `AdwMessageDialog` for password/PIN entry — matches GNOME system dialogs exactly
@@ -51,7 +51,7 @@ A small Rust+GTK4 binary (~200 lines) using `gtk4-rs` and `libadwaita` that:
 - Biometric via `fprintd` D-Bus API (polkit-style prompt)
 
 ```
-bitsafe-prompt-linux/
+grimoire-prompt-linux/
   Cargo.toml
   src/
     main.rs              # Entry point, argument parsing
@@ -59,13 +59,13 @@ bitsafe-prompt-linux/
     biometric.rs         # fprintd D-Bus integration
 ```
 
-**Build**: `cargo build -p bitsafe-prompt-linux --release`
+**Build**: `cargo build -p grimoire-prompt-linux --release`
 
 **System deps**: `gtk4`, `libadwaita-1` (available on all modern GNOME distros)
 
 #### Shared Protocol
 
-Both native binaries speak the same protocol as the current `bitsafe-prompt`:
+Both native binaries speak the same protocol as the current `grimoire-prompt`:
 - Arguments: `password [--message MSG]`, `biometric [--reason MSG]`, `pin [--attempt N --max-attempts N]`
 - Output: single JSON line to stdout
 - Exit codes: 0 = success, 1 = cancelled, 2 = error
@@ -75,14 +75,14 @@ The service doesn't need to know which platform binary it's spawning — the int
 #### Fallback Chain
 
 ```
-1. Platform-native binary (bitsafe-prompt-macos / bitsafe-prompt-linux)
-2. bitsafe-prompt (current zenity/kdialog/osascript fallback)
+1. Platform-native binary (grimoire-prompt-macos / grimoire-prompt-linux)
+2. grimoire-prompt (current zenity/kdialog/osascript fallback)
 3. Terminal fallback (rpassword)
 ```
 
 The service checks for binaries in order:
-1. `bitsafe-prompt-{platform}` next to `bitsafe-service`, then in PATH
-2. `bitsafe-prompt` next to `bitsafe-service`, then in PATH
+1. `grimoire-prompt-{platform}` next to `grimoire-service`, then in PATH
+2. `grimoire-prompt` next to `grimoire-service`, then in PATH
 3. Terminal fallback (only if `prompt.method = terminal`)
 
 ### Build Tooling: mise
@@ -113,7 +113,7 @@ cargo build --workspace --release
 cd native/macos && swift build -c release
 {% endif %}
 {% if os() == "linux" %}
-cargo build -p bitsafe-prompt-linux --release
+cargo build -p grimoire-prompt-linux --release
 {% endif %}
 """
 
@@ -125,10 +125,10 @@ run = "cargo test --workspace"
 description = "Install all binaries"
 depends = ["build"]
 run = """
-cargo install --path crates/bitsafe-cli
-cargo install --path crates/bitsafe-service
+cargo install --path crates/grimoire-cli
+cargo install --path crates/grimoire-service
 {% if os() == "macos" %}
-cp native/macos/.build/release/bitsafe-prompt-macos ~/.cargo/bin/
+cp native/macos/.build/release/grimoire-prompt-macos ~/.cargo/bin/
 {% endif %}
 {% if os() == "linux" %}
 cargo install --path native/linux
@@ -139,7 +139,7 @@ cargo install --path native/linux
 description = "Build debug and run service"
 run = """
 cargo build --workspace
-cargo run -p bitsafe-service
+cargo run -p grimoire-service
 """
 
 [tasks.fmt]
@@ -164,17 +164,17 @@ swift-format lint native/macos/Sources/*.swift
 #### Project Layout
 
 ```
-bitsafe/
+grimoire/
   .mise.toml                    # Tool management + tasks
   Cargo.toml                    # Rust workspace
   crates/
-    bitsafe-sdk/                # SDK wrapper (Rust)
-    bitsafe-protocol/           # IPC protocol (Rust)
-    bitsafe-service/            # Service daemon (Rust)
-    bitsafe-cli/                # CLI client (Rust)
-    bitsafe-ssh-agent/          # Standalone SSH agent (Rust)
-    bitsafe-common/             # Shared utilities (Rust)
-    bitsafe-prompt/             # Fallback prompt (Rust, zenity/kdialog/osascript)
+    grimoire-sdk/                # SDK wrapper (Rust)
+    grimoire-protocol/           # IPC protocol (Rust)
+    grimoire-service/            # Service daemon (Rust)
+    grimoire-cli/                # CLI client (Rust)
+    grimoire-ssh-agent/          # Standalone SSH agent (Rust)
+    grimoire-common/             # Shared utilities (Rust)
+    grimoire-prompt/             # Fallback prompt (Rust, zenity/kdialog/osascript)
   native/
     macos/                      # SwiftUI prompt
       Package.swift
@@ -217,4 +217,4 @@ The `native/linux` crate is intentionally **not** part of the Cargo workspace �
 - The prompt protocol (arguments, JSON stdout, exit codes) is unchanged
 - The service's `prompt.rs` module stays the same — just discovers a different binary name
 - Terminal fallback still works
-- The `bitsafe-prompt` crate remains as the universal fallback
+- The `grimoire-prompt` crate remains as the universal fallback

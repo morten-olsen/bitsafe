@@ -1,4 +1,4 @@
-# BitSafe Security Audit Report
+# Grimoire Security Audit Report
 
 **Date**: 2026-03-20
 **Scope**: Full codebase audit — all crates, native prompt binaries, dependencies, build configuration
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-BitSafe is a single-user password manager daemon with a Unix socket IPC model analogous to `ssh-agent`. The architecture is sound: cryptographic operations are delegated to the battle-tested Bitwarden SDK, the IPC trust boundary is enforced by OS-level socket permissions and peer credential checks, and the scoped access approval system provides meaningful defense against remote code execution attacks.
+Grimoire is a single-user password manager daemon with a Unix socket IPC model analogous to `ssh-agent`. The architecture is sound: cryptographic operations are delegated to the battle-tested Bitwarden SDK, the IPC trust boundary is enforced by OS-level socket permissions and peer credential checks, and the scoped access approval system provides meaningful defense against remote code execution attacks.
 
 This audit identifies **3 critical findings**, **6 high-severity findings**, and **9 medium-severity findings**. The most impactful issues are:
 
@@ -39,7 +39,7 @@ Each finding is evaluated against these scenarios:
 
 ### C1: Password re-verification accepts any password
 
-**Location**: `crates/bitsafe-service/src/session.rs:258-265`
+**Location**: `crates/grimoire-service/src/session.rs:258-265`
 **Scenarios**: S1, S2, S3
 
 When a session expires and the user falls through biometric and PIN to the master password fallback, the code accepts *any* password without validation:
@@ -69,7 +69,7 @@ Option (b) is actually the more honest design — re-deriving keys from the mast
 
 ### C2: Access approval password fallback has the same bypass
 
-**Location**: `crates/bitsafe-service/src/session.rs:154-158`
+**Location**: `crates/grimoire-service/src/session.rs:154-158`
 **Scenarios**: S1, S2
 
 The scoped access approval also falls back to a password prompt that accepts any input:
@@ -88,15 +88,15 @@ Same issue as C1. A prompt binary that writes `{"status":"ok","credential":"anyt
 
 ### C3: Prompt binary is fully trusted with no integrity verification
 
-**Location**: `crates/bitsafe-service/src/prompt.rs:16-53`
+**Location**: `crates/grimoire-service/src/prompt.rs:16-53`
 **Scenarios**: S1, S4
 
-The service trusts whatever binary it finds as `bitsafe-prompt` without any integrity check. The discovery chain:
+The service trusts whatever binary it finds as `grimoire-prompt` without any integrity check. The discovery chain:
 
 1. Native binary next to `current_exe()` — relatively safe
 2. Generic binary next to `current_exe()` — relatively safe
 3. `which` lookup for native binary — **PATH-dependent**
-4. Bare `"bitsafe-prompt"` — **PATH-dependent**
+4. Bare `"grimoire-prompt"` — **PATH-dependent**
 
 An attacker who can place a binary earlier in `$PATH` (common in S1 — many dev tools prepend to PATH) can intercept all password prompts. The malicious binary would:
 - Receive the user's master password in the clear
@@ -114,7 +114,7 @@ An attacker who can place a binary earlier in `$PATH` (common in S1 — many dev
 
 ## High Findings
 
-### H1: No secret zeroization in the BitSafe layer
+### H1: No secret zeroization in the Grimoire layer
 
 **Location**: Throughout all crates
 **Scenarios**: S3, S6
@@ -126,9 +126,9 @@ Passwords and PINs flow as plain `String` through the entire stack:
 - `rpassword::prompt_password()` return value — CLI
 - JSON-encoded passwords in IPC messages — codec layer
 
-The SDK uses `ZeroizingAllocator` internally for key material, but all data flowing through BitSafe code is not zeroized. This means passwords persist in freed heap memory until overwritten by subsequent allocations.
+The SDK uses `ZeroizingAllocator` internally for key material, but all data flowing through Grimoire code is not zeroized. This means passwords persist in freed heap memory until overwritten by subsequent allocations.
 
-The most sensitive instance is `UserKeyState` in `crates/bitsafe-sdk/src/state.rs:14` — the decrypted user key stored as a base64 `String` in a `HashMap`. This key can decrypt the entire vault.
+The most sensitive instance is `UserKeyState` in `crates/grimoire-sdk/src/state.rs:14` — the decrypted user key stored as a base64 `String` in a `HashMap`. This key can decrypt the entire vault.
 
 **Impact**: A memory dump (core dump, swap file, hibernation image, cold boot attack) can recover passwords and vault keys. On macOS, where there is no `mlockall`, pages containing passwords can be swapped to disk at any time.
 
@@ -136,7 +136,7 @@ The most sensitive instance is `UserKeyState` in `crates/bitsafe-sdk/src/state.r
 
 ### H2: No connection limits, rate limiting, or read timeouts on the Unix socket
 
-**Location**: `crates/bitsafe-service/src/server.rs:76-115`, `crates/bitsafe-protocol/src/codec.rs:62-80`
+**Location**: `crates/grimoire-service/src/server.rs:76-115`, `crates/grimoire-protocol/src/codec.rs:62-80`
 **Scenarios**: S1, S2
 
 The accept loop spawns an unbounded number of tokio tasks with no:
@@ -161,7 +161,7 @@ A malicious same-user process can:
 
 ### H3: Memory hardening is non-fatal and absent on macOS
 
-**Location**: `crates/bitsafe-service/src/main.rs:34-46`
+**Location**: `crates/grimoire-service/src/main.rs:34-46`
 **Scenarios**: S3, S6
 
 `mlockall` and `PR_SET_DUMPABLE` failures are logged as warnings and execution continues. On macOS, no memory hardening is attempted at all.
@@ -179,12 +179,12 @@ A malicious same-user process can:
 
 ### H4: Backoff counter resets on service restart
 
-**Location**: `crates/bitsafe-service/src/state.rs:116,149`
+**Location**: `crates/grimoire-service/src/state.rs:116,149`
 **Scenarios**: S1, S2, S3
 
 `master_password_attempts` and `last_password_attempt` are in-memory fields initialized to `0`/`None` on startup. An attacker who can restart the service (e.g., `kill` + wait for systemd restart) gets unlimited password attempts with no backoff.
 
-On Linux with the systemd unit generated by `bitsafe service install`, the service has `Restart=on-failure` with `RestartSec=5`. An attacker can:
+On Linux with the systemd unit generated by `grimoire service install`, the service has `Restart=on-failure` with `RestartSec=5`. An attacker can:
 1. Try 2 passwords (no backoff on first two)
 2. Kill the service (`SIGKILL` from same-user process)
 3. Wait 5 seconds for restart
@@ -194,18 +194,18 @@ On Linux with the systemd unit generated by `bitsafe service install`, the servi
 
 ### H5: PIN has no delay between attempts
 
-**Location**: `crates/bitsafe-service/src/state.rs:340-358`
+**Location**: `crates/grimoire-service/src/state.rs:340-358`
 **Scenarios**: S1, S2
 
 PINs have a max attempt limit (3) but no delay between attempts. A 4-digit numeric PIN has 10,000 possibilities. With 3 attempts before auto-lock, then an immediate re-unlock (if the attacker has already exfiltrated the master password from a previous prompt binary attack), the attacker gets unlimited batches of 3 PIN attempts.
 
-Even without knowing the master password, the auto-lock-then-GUI-prompt cycle means the attacker can keep triggering PIN prompts that the legitimate user might respond to (social engineering: "BitSafe keeps asking me to re-enter my password").
+Even without knowing the master password, the auto-lock-then-GUI-prompt cycle means the attacker can keep triggering PIN prompts that the legitimate user might respond to (social engineering: "Grimoire keeps asking me to re-enter my password").
 
 **Recommendation**: Add a 1-second delay between PIN attempts. After the 3rd failure (auto-lock), persist the failed count so re-unlock doesn't reset PIN attempts. Require successful master password authentication to reset the PIN attempt counter.
 
 ### H6: Config file not validated for permissions or content bounds
 
-**Location**: `crates/bitsafe-common/src/config.rs:198-210`
+**Location**: `crates/grimoire-common/src/config.rs:198-210`
 **Scenarios**: S1, S2
 
 The config file is loaded without checking:
@@ -228,7 +228,7 @@ The config file is loaded without checking:
 
 ### M1: `VaultGetParams` and `SshSignParams` missing `#[serde(deny_unknown_fields)]`
 
-**Location**: `crates/bitsafe-protocol/src/request.rs`
+**Location**: `crates/grimoire-protocol/src/request.rs`
 **Scenarios**: Protocol confusion
 
 All other parameter structs have `deny_unknown_fields` to prevent the `#[serde(untagged)]` enum from greedily matching. These two are missing it. While the practical impact is low (extra fields are silently ignored), this inconsistency could cause deserialization to match the wrong variant if new similar-shaped structs are added.
@@ -237,7 +237,7 @@ All other parameter structs have `deny_unknown_fields` to prevent the `#[serde(u
 
 ### M2: Persistent login state file has no integrity protection
 
-**Location**: `crates/bitsafe-sdk/src/persist.rs`
+**Location**: `crates/grimoire-sdk/src/persist.rs`
 **Scenarios**: S2
 
 `login.json` stores email and server URL. A same-user attacker can modify this file to point at a malicious server. On next unlock, the service would send the master password hash to the attacker's server.
@@ -250,7 +250,7 @@ The file is protected by `0600` permissions, but a same-user process can read an
 
 ### M3: `/proc/<pid>/stat` TOCTOU in session leader resolution
 
-**Location**: `crates/bitsafe-service/src/peer.rs:30-37`
+**Location**: `crates/grimoire-service/src/peer.rs:30-37`
 **Scenarios**: S2
 
 The session leader PID is read from `/proc/<pid>/stat` at connection time. Between read and use, the PID could be recycled. If an attacker's process gets the same PID as a previously approved session leader, it inherits the approval grant.
@@ -261,7 +261,7 @@ The session leader PID is read from `/proc/<pid>/stat` at connection time. Betwe
 
 ### M4: Error messages leak vault metadata
 
-**Location**: `crates/bitsafe-service/src/session.rs:592-608`
+**Location**: `crates/grimoire-service/src/session.rs:592-608`
 **Scenarios**: S1, S2
 
 Vault reference resolution errors include item names and counts:
@@ -273,7 +273,7 @@ Vault reference resolution errors include item names and counts:
 
 ### M5: SSH private key not zeroized after signing
 
-**Location**: `crates/bitsafe-sdk/src/ssh.rs:76-79`
+**Location**: `crates/grimoire-sdk/src/ssh.rs:76-79`
 **Scenarios**: S3, S6
 
 After parsing the SSH private key from OpenSSH format and signing, the `PrivateKey` and `SigningKey` objects are dropped without zeroization:
@@ -290,16 +290,16 @@ The `ed25519_dalek::SigningKey` and `rsa::RsaPrivateKey` do not implement `Zeroi
 
 ### M6: Service log file on macOS is world-readable
 
-**Location**: `crates/bitsafe-cli/src/main.rs:327-328`
+**Location**: `crates/grimoire-cli/src/main.rs:327-328`
 **Scenarios**: S2
 
-The macOS LaunchAgent plist writes stdout/stderr to `/tmp/bitsafe-service.log`:
+The macOS LaunchAgent plist writes stdout/stderr to `/tmp/grimoire-service.log`:
 
 ```xml
 <key>StandardOutPath</key>
-<string>/tmp/bitsafe-service.log</string>
+<string>/tmp/grimoire-service.log</string>
 <key>StandardErrorPath</key>
-<string>/tmp/bitsafe-service.log</string>
+<string>/tmp/grimoire-service.log</string>
 ```
 
 Files created in `/tmp` inherit the umask of the creating process. If the umask allows it (common default: `0022`), the log file is world-readable. Service logs include:
@@ -308,11 +308,11 @@ Files created in `/tmp` inherit the umask of the creating process. If the umask 
 - Connection details and peer PIDs
 - Sync status
 
-**Recommendation**: Use `~/Library/Logs/bitsafe-service.log` instead of `/tmp`. Alternatively, set `StandardOutPath` to a directory with restricted permissions.
+**Recommendation**: Use `~/Library/Logs/grimoire-service.log` instead of `/tmp`. Alternatively, set `StandardOutPath` to a directory with restricted permissions.
 
 ### M7: Background sync happens over a read lock that blocks state mutations
 
-**Location**: `crates/bitsafe-service/src/sync_worker.rs:46-55`
+**Location**: `crates/grimoire-service/src/sync_worker.rs:46-55`
 **Scenarios**: Operational
 
 Background sync holds a read lock on `state` for the entire duration of the HTTP request to the server:
@@ -347,7 +347,7 @@ The SDK requires `digest 0.11.1` which has been yanked from crates.io. While Car
 
 **Impact**: Build breakage, not a runtime vulnerability. However, yanked crates are typically yanked due to bugs or security issues — the reason should be investigated.
 
-**Recommendation**: Investigate why `digest 0.11.1` was yanked. If it's a security fix, assess impact on BitSafe. Document the investigation in `UPGRADING.md`. Consider whether a newer SDK revision resolves this.
+**Recommendation**: Investigate why `digest 0.11.1` was yanked. If it's a security fix, assess impact on Grimoire. Document the investigation in `UPGRADING.md`. Consider whether a newer SDK revision resolves this.
 
 ---
 
@@ -365,11 +365,11 @@ The biometric/PIN approval system gated by session leader PID is an effective de
 
 ### P3: `exec()` semantics for secret injection
 
-`bitsafe run` uses `execvp()` — the BitSafe process is replaced entirely. No wrapper process lingers with secrets in its memory. No TTY interposition. All resolution errors happen before exec. This is the correct design.
+`grimoire run` uses `execvp()` — the Grimoire process is replaced entirely. No wrapper process lingers with secrets in its memory. No TTY interposition. All resolution errors happen before exec. This is the correct design.
 
 ### P4: Crypto delegation to the SDK
 
-BitSafe never handles raw cryptographic keys. All crypto operations go through the SDK's `PasswordManagerClient`, which uses `ZeroizingAllocator` and `KeyStore` internally. Key derivation, encryption, and decryption are entirely within the SDK. This is a sound trust boundary.
+Grimoire never handles raw cryptographic keys. All crypto operations go through the SDK's `PasswordManagerClient`, which uses `ZeroizingAllocator` and `KeyStore` internally. Key derivation, encryption, and decryption are entirely within the SDK. This is a sound trust boundary.
 
 ### P5: Socket peer credential verification
 
@@ -452,7 +452,7 @@ The only `unsafe` blocks are `libc::mlockall()`, `libc::prctl()`, `libc::getuid(
 
 ### Scenario S5: Network
 
-**Attack path**: MITM between BitSafe and Bitwarden/Vaultwarden server.
+**Attack path**: MITM between Grimoire and Bitwarden/Vaultwarden server.
 
 **Current defenses**:
 - HTTPS via `reqwest` with `rustls-tls` (no OpenSSL, certificate verification enabled by default)

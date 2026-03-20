@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "bitsafe-prompt-macos",
+    name: "grimoire-prompt-macos",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "bitsafe-prompt-macos",
+            name: "grimoire-prompt-macos",
             path: "Sources"
         )
     ]

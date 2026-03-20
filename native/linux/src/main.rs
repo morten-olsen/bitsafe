@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Parser)]
-#[command(name = "bitsafe-prompt-linux")]
+#[command(name = "grimoire-prompt-linux")]
 struct Cli {
     #[command(subcommand)]
     mode: Mode,
@@ -19,7 +19,7 @@ enum Mode {
         message: String,
     },
     Biometric {
-        #[arg(long, default_value = "BitSafe wants to verify your identity")]
+        #[arg(long, default_value = "Grimoire wants to verify your identity")]
         reason: String,
     },
     Pin {
@@ -54,7 +54,7 @@ fn main() {
     let cli = Cli::parse();
 
     let app = libadwaita::Application::builder()
-        .application_id("com.bitsafe.prompt")
+        .application_id("com.grimoire.prompt")
         .build();
 
     let mode = Rc::new(RefCell::new(Some(cli.mode)));
@@ -101,7 +101,7 @@ fn main() {
 fn show_password_dialog(app: &libadwaita::Application, message: &str) {
     let window = libadwaita::ApplicationWindow::builder()
         .application(app)
-        .title("BitSafe")
+        .title("Grimoire")
         .default_width(380)
         .default_height(-1)
         .resizable(false)
@@ -109,7 +109,7 @@ fn show_password_dialog(app: &libadwaita::Application, message: &str) {
 
     // Heading
     let heading = gtk4::Label::builder()
-        .label("BitSafe")
+        .label("Grimoire")
         .css_classes(["title-1"])
         .build();
 

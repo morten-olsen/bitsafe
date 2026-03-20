@@ -6,12 +6,12 @@
 cargo build --release
 ```
 
-Binaries are in `target/release/`: `bitsafe` (CLI), `bitsafe-service`, `bitsafe-prompt`.
+Binaries are in `target/release/`: `grimoire` (CLI), `grimoire-service`, `grimoire-prompt`.
 
 Copy them somewhere in your PATH:
 
 ```bash
-cp target/release/{bitsafe,bitsafe-service,bitsafe-prompt} ~/.cargo/bin/
+cp target/release/{grimoire,grimoire-service,grimoire-prompt} ~/.cargo/bin/
 ```
 
 ## First-Time Setup
@@ -19,13 +19,13 @@ cp target/release/{bitsafe,bitsafe-service,bitsafe-prompt} ~/.cargo/bin/
 ### 1. Start the service
 
 ```bash
-bitsafe-service
+grimoire-service
 ```
 
 Or install it to start on login:
 
 ```bash
-bitsafe service install
+grimoire service install
 ```
 
 This creates a systemd user unit (Linux) or LaunchAgent (macOS).
@@ -33,7 +33,7 @@ This creates a systemd user unit (Linux) or LaunchAgent (macOS).
 ### 2. Log in
 
 ```bash
-bitsafe login your@email.com --server https://your-vaultwarden.example.com
+grimoire login your@email.com --server https://your-vaultwarden.example.com
 ```
 
 This prompts for your master password in the terminal. Login is a one-time operation — the credentials persist across service restarts.
@@ -41,7 +41,7 @@ This prompts for your master password in the terminal. Login is a one-time opera
 ### 3. Unlock
 
 ```bash
-bitsafe unlock
+grimoire unlock
 ```
 
 This pops up a GUI password dialog (zenity on Linux, osascript on macOS). The GUI prompt is the default for security — an attacker with shell access can trigger unlock but can't interact with the dialog without visual access.
@@ -49,43 +49,43 @@ This pops up a GUI password dialog (zenity on Linux, osascript on macOS). The GU
 For headless/SSH sessions:
 
 ```bash
-bitsafe unlock --terminal
+grimoire unlock --terminal
 ```
 
 ### 4. Use it
 
 ```bash
 # List items
-bitsafe list
+grimoire list
 
 # Search
-bitsafe list --search github
+grimoire list --search github
 
 # Get full item
-bitsafe get <id>
+grimoire get <id>
 
 # Get single field (pipe-friendly)
-bitsafe get <id> -f password
-bitsafe get <id> -f username
+grimoire get <id> -f password
+grimoire get <id> -f username
 
 # Copy password to clipboard
-bitsafe get <id> -f password | xclip -selection clipboard  # Linux
-bitsafe get <id> -f password | pbcopy                      # macOS
+grimoire get <id> -f password | xclip -selection clipboard  # Linux
+grimoire get <id> -f password | pbcopy                      # macOS
 
 # Generate TOTP code
-bitsafe totp <id>
+grimoire totp <id>
 
 # Force sync
-bitsafe sync
+grimoire sync
 
 # Lock
-bitsafe lock
+grimoire lock
 
 # Log out (deletes persisted credentials)
-bitsafe logout
+grimoire logout
 
 # Check status
-bitsafe status
+grimoire status
 ```
 
 ## SSH Agent
@@ -97,7 +97,7 @@ The service includes a built-in SSH agent. SSH keys stored in your Bitwarden vau
 Add to your shell profile (`~/.bashrc`, `~/.zshrc`):
 
 ```bash
-export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bitsafe/ssh-agent.sock"
+export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/grimoire/ssh-agent.sock"
 ```
 
 ### Verify
@@ -131,18 +131,18 @@ Restart Vaultwarden after setting it.
 
 ```bash
 # Bash
-bitsafe completions bash >> ~/.bashrc
+grimoire completions bash >> ~/.bashrc
 
 # Zsh
-bitsafe completions zsh > ~/.zfunc/_bitsafe
+grimoire completions zsh > ~/.zfunc/_grimoire
 
 # Fish
-bitsafe completions fish > ~/.config/fish/completions/bitsafe.fish
+grimoire completions fish > ~/.config/fish/completions/grimoire.fish
 ```
 
 ## Configuration
 
-Optional config file at `~/.config/bitsafe/config.toml`:
+Optional config file at `~/.config/grimoire/config.toml`:
 
 ```toml
 [server]
@@ -169,7 +169,7 @@ Security parameters are hardcoded and not configurable:
 ## Service Management
 
 ```bash
-bitsafe service install     # Install and start
-bitsafe service uninstall   # Stop and remove
-bitsafe service ssh-socket  # Print SSH_AUTH_SOCK path
+grimoire service install     # Install and start
+grimoire service uninstall   # Stop and remove
+grimoire service ssh-socket  # Print SSH_AUTH_SOCK path
 ```

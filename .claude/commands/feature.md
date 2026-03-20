@@ -1,4 +1,4 @@
-End-to-end feature development lifecycle for BitSafe.
+End-to-end feature development lifecycle for Grimoire.
 
 Arguments: $ARGUMENTS
 

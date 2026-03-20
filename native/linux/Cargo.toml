@@ -1,12 +1,12 @@
 [package]
-name = "bitsafe-prompt-linux"
+name = "grimoire-prompt-linux"
 version = "0.1.0"
 edition = "2021"
 
 # NOT part of the workspace — gtk4/libadwaita deps shouldn't pollute the main build
 
 [[bin]]
-name = "bitsafe-prompt-linux"
+name = "grimoire-prompt-linux"
 path = "src/main.rs"
 
 [dependencies]

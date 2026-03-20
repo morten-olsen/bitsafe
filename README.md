@@ -1,4 +1,4 @@
-# BitSafe
+# Grimoire
 
 **A Bitwarden-compatible CLI and SSH agent for Vaultwarden.**
 **Built by one engineer and a mass of AI. You should be mass worried.**
@@ -11,14 +11,14 @@
 
 ## What Is This
 
-BitSafe is what happens when you look at `ssh-agent` and think "what if this, but for my entire Bitwarden vault, and also what if I made a series of mass questionable life choices along the way."
+Grimoire is what happens when you look at `ssh-agent` and think "what if this, but for my entire Bitwarden vault, and also what if I made a series of mass questionable life choices along the way."
 
 It's a daemon that sits in the background, holds your decrypted vault keys in memory, and lets your CLI, your SSH client, and your deployment scripts talk to it over a Unix socket. The actual cryptography is done by the official [Bitwarden SDK](https://github.com/bitwarden/sdk-internal) (which has been professionally audited by people with degrees and certifications). Everything else — the daemon, the socket handling, the prompt agent, the questionable life choices — that's us.
 
 ```
-  you ─── bitsafe (CLI) ────┐
-  git ─── ssh ──────────────┼── bitsafe-service ──── Vaultwarden
-  scripts ── bitsafe run ───┘       (keys in memory, prayers in production)
+  you ─── grimoire (CLI) ────┐
+  git ─── ssh ──────────────┼── grimoire-service ──── Vaultwarden
+  scripts ── grimoire run ───┘       (keys in memory, prayers in production)
 ```
 
 It works with [Vaultwarden](https://github.com/dani-garcia/vaultwarden) out of the box. It also works with Bitwarden Cloud, but if you're self-hosting your password manager you're already the target audience for "software that requires compiling from source and reading a threat model before breakfast."
@@ -27,11 +27,11 @@ It works with [Vaultwarden](https://github.com/dani-garcia/vaultwarden) out of t
 
 The official Bitwarden CLI works fine. Normal people use it and are happy. You are apparently not normal people, because you're reading the README of an alternative CLI that opens with "please don't use this." Welcome. You'll fit right in.
 
-You might want BitSafe if you want:
+You might want Grimoire if you want:
 
 - **SSH keys from your vault** — no `~/.ssh/id_ed25519` sitting on disk like a welcome mat for anyone who gets shell access. Your private keys exist only in memory and in your vault, which is either brilliant operational security or just moving the "single point of failure" to somewhere with a nicer UI.
 
-- **Secret injection** — `bitsafe run -- ./deploy.sh` resolves `bitsafe:<id>/password` references in your environment variables before `exec`ing your command. Because environment variables are the new `.env` files, which were the new hardcoded passwords, which were the new sticky notes on monitors, and at some point we should probably just admit that the entire concept of "knowing a secret" is fundamentally incompatible with "computers."
+- **Secret injection** — `grimoire run -- ./deploy.sh` resolves `grimoire:<id>/password` references in your environment variables before `exec`ing your command. Because environment variables are the new `.env` files, which were the new hardcoded passwords, which were the new sticky notes on monitors, and at some point we should probably just admit that the entire concept of "knowing a secret" is fundamentally incompatible with "computers."
 
 - **Approval prompts that actually mean something** — every vault operation requires biometric, PIN, or password re-verification, scoped to your terminal session, expiring after 5 minutes. Not "unlock once, every process on your machine has a pool party with your credentials." Actual, per-session, time-limited approval. This is the feature that exists because someone once got RCE'd and the attacker's script just ran `bw get password prod-database` and nobody asked any questions.
 
@@ -41,7 +41,7 @@ You might want BitSafe if you want:
 
 ## The Security Model (Read This Or Don't, We're Not Your Parents)
 
-BitSafe follows the `ssh-agent` trust model: a single-user daemon holds decrypted keys in memory, accessible over a Unix socket. If you know what `ssh-agent` does, you know the shape of this. If you don't know what `ssh-agent` does, you're about to learn, and honestly this is a great way to learn because we're going to be very honest about all the ways it can go wrong.
+Grimoire follows the `ssh-agent` trust model: a single-user daemon holds decrypted keys in memory, accessible over a Unix socket. If you know what `ssh-agent` does, you know the shape of this. If you don't know what `ssh-agent` does, you're about to learn, and honestly this is a great way to learn because we're going to be very honest about all the ways it can go wrong.
 
 If you skip this section and something bad happens, the consequences could include but are not limited to: credential exposure, unauthorized access to your infrastructure, your production database being renamed to `lol_no_backups`, your cryptocurrency wallet sending everything to an address that starts with `0xDEAD`, your CI pipeline deploying a bitcoin miner to every edge node, and a very awkward conversation with your CISO who specifically told you not to use unaudited security tools you found on GitHub.
 
@@ -57,7 +57,7 @@ We're going to give you two tables. The first one is the one you show your manag
 | IPC eavesdropping | X25519 key exchange + ChaCha20-Poly1305 AEAD per connection | Someone sniffs your socket traffic and learns your Netflix password is `netflix123!` and you haven't changed it since 2019. The security implications are secondary to the personal embarrassment. |
 | Swap/core dump exposure | `mlockall` + `PR_SET_DUMPABLE` (Linux only) | A core dump contains your master password. It gets included in a bug report. The bug report is public. Your master password is `ILoveMyCat2024`. The cat's name is in your Twitter bio. |
 | Brute force | Exponential backoff (master password), 3 attempts + auto-lock (PIN) | Someone tries every PIN from 0000 to 9999 except they only get 3 before the vault locks and the keys are scrubbed from memory. They are very frustrated. Good. |
-| Blind RCE / shell access | GUI prompt required for unlock — attacker needs physical display access | Attacker runs `bitsafe list`, a dialog box pops up on *your* screen asking for your fingerprint, attacker stares at their reverse shell wondering why nothing is happening. Chef's kiss. |
+| Blind RCE / shell access | GUI prompt required for unlock — attacker needs physical display access | Attacker runs `grimoire list`, a dialog box pops up on *your* screen asking for your fingerprint, attacker stares at their reverse shell wondering why nothing is happening. Chef's kiss. |
 | Physical access without credentials | Prompt requires biometric, PIN, or master password | Someone walks up to your machine. A dialog appears. They need your fingerprint, your PIN, or your master password. They have none of these. They walk away. The system works exactly as intended, which is a sentence we don't get to say often enough. |
 | Background process abuse | Scoped approval tied to terminal session leader PID (always on, hardcoded) | That sketchy npm postinstall script tries to read your vault. It's in a different session. Denied. It files a GitHub issue calling this "overly restrictive." We frame it. |
 | Config-based downgrade | Security parameters are hardcoded constants | Attacker modifies your config file to set `require_approval = false`. Nothing happens because that setting doesn't exist anymore. Attacker reads CLAUDE.md, learns this was removed on purpose, briefly questions their life choices. |
@@ -76,7 +76,7 @@ Here's the flow:
 4. After **5 minutes**, the approval expires. Want more secrets? Prove you're you again.
 5. All of these parameters are **hardcoded**. Not configurable. Not optional. Not "off by default but you can enable it." On. Always. Forever.
 
-**Why this matters**: Imagine an attacker gets shell access to your machine — RCE, compromised SSH key, that mass npm package you installed without checking, whatever. They run `bitsafe list`. A dialog box pops up on your screen. They're sitting in their apartment in another timezone staring at a shell prompt wondering why nothing happened. They need your fingerprint, your PIN, or your master password. If they have your master password, they *could* use `bitsafe authorize` — but at that point both your computer and your master password are compromised, and you have much bigger problems than BitSafe's approval model. Like explaining to your team why the deploy keys are now on a Telegram channel, your DNS is pointing to a parking page, and someone is mass mining Dogecoin on your Kubernetes cluster.
+**Why this matters**: Imagine an attacker gets shell access to your machine — RCE, compromised SSH key, that mass npm package you installed without checking, whatever. They run `grimoire list`. A dialog box pops up on your screen. They're sitting in their apartment in another timezone staring at a shell prompt wondering why nothing happened. They need your fingerprint, your PIN, or your master password. If they have your master password, they *could* use `grimoire authorize` — but at that point both your computer and your master password are compromised, and you have much bigger problems than Grimoire's approval model. Like explaining to your team why the deploy keys are now on a Telegram channel, your DNS is pointing to a parking page, and someone is mass mining Dogecoin on your Kubernetes cluster.
 
 We learned our lesson from every tool that shipped with `--disable-security-for-testing` and discovered that production *is* the test environment. You can't turn this off. We're sorry. We're not actually sorry.
 
@@ -110,7 +110,7 @@ The boring list, but we'll try to make it less boring:
 
 - **Vault access** — list, search, get passwords, usernames, notes, TOTP codes. The basics. The bread and butter. The reason you're here instead of just using `pass` like a minimalist.
 - **SSH agent** — your vault's SSH keys, served from memory, no files on disk. Ed25519 today, RSA/ECDSA when we get around to it. Your `~/.ssh` directory can finally be empty, which will confuse every onboarding guide ever written.
-- **Secret injection** — `bitsafe run -- ./deploy.sh` scans env vars for `bitsafe:<id>/password` references, resolves them, and `exec`s your command. No wrapper process. No temp files. No shell history. Your secrets go from vault to process memory and nowhere else. It's like a dead drop but for environment variables.
+- **Secret injection** — `grimoire run -- ./deploy.sh` scans env vars for `grimoire:<id>/password` references, resolves them, and `exec`s your command. No wrapper process. No temp files. No shell history. Your secrets go from vault to process memory and nowhere else. It's like a dead drop but for environment variables.
 - **Scoped access approval** — biometric, PIN, or password re-verification per terminal session. Always on. Not negotiable. We don't care about your convenience. We care about the mass incident you'll have *without* it.
 - **Encrypted IPC** — every socket connection does an X25519 key exchange and then speaks ChaCha20-Poly1305. This is the definition of defense in depth: the socket permissions should be enough, but "should be enough" is a phrase that appears on approximately 100% of post-incident reports.
 - **Auto-lock** — 15 minutes of inactivity and the vault locks itself. Hardcoded. Because we know you. We know you'd set it to `999999`. We know you'd write a cron job to reset the timer. We know because we thought about doing it ourselves.
@@ -119,7 +119,7 @@ The boring list, but we'll try to make it less boring:
 - **Shell completions** — bash, zsh, fish. We're not animals.
 - **Persistent login** — service restarts only need `unlock`, not a full `login`. Because retyping your email and server URL every time your laptop wakes from sleep would make us uninstall our own software.
 - **Git commit signing** — sign commits with SSH keys from your vault. No key files. No GPG. No existential crisis about expired subkeys.
-- **Headless support** — `bitsafe authorize` for SSH sessions and servers without displays. Because not every machine has a screen, but every machine deserves secrets.
+- **Headless support** — `grimoire authorize` for SSH sessions and servers without displays. Because not every machine has a screen, but every machine deserves secrets.
 - **Hardcoded security** — security parameters are compile-time constants. `auto_lock_seconds = 0` is not a power user setting. It's a cry for help. We hardcoded the defaults so you can't weaken them. You're welcome. Please stop asking.
 
 ## Quick Install
@@ -134,11 +134,11 @@ The boring list, but we'll try to make it less boring:
 ### Build & Install
 
 ```bash
-git clone https://github.com/user/bitsafe.git
-cd bitsafe
-cargo install --path crates/bitsafe-cli
-cargo install --path crates/bitsafe-service
-cargo install --path crates/bitsafe-prompt
+git clone https://github.com/user/grimoire.git
+cd grimoire
+cargo install --path crates/grimoire-cli
+cargo install --path crates/grimoire-service
+cargo install --path crates/grimoire-prompt
 # Go make mass coffee. Rust is compiling. It'll be a minute.
 # Not a literal minute. More like four minutes. Unless you're on a Raspberry Pi,
 # in which case go make lunch.
@@ -148,14 +148,14 @@ cargo install --path crates/bitsafe-prompt
 
 ```bash
 # Start the service (it runs in the background like your mass anxiety)
-bitsafe-service &
+grimoire-service &
 
 # Log in (one-time — you won't need to do this again unless you logout)
-bitsafe login you@example.com --server https://vault.example.com
+grimoire login you@example.com --server https://vault.example.com
 
 # Use it (a dialog will pop up. approve it. this is the approval system. it's a feature.)
-bitsafe list
-bitsafe get <id> -f password
+grimoire list
+grimoire get <id> -f password
 ```
 
 For detailed installation instructions including native prompts, service auto-start, and platform-specific setup, see the **[Installation Guide](docs/install.md)**. It's less funny than this README but more useful, which is a tradeoff we've made peace with.
@@ -169,10 +169,10 @@ We have a lot of docs. Possibly too many. But this is a security product and "I 
 | Document | What's In It |
 |----------|-------------|
 | **[Installation Guide](docs/install.md)** | Full install for Linux, macOS, and Android/Termux. Yes, Termux. We're as surprised as you are. |
-| **[Tutorial: Getting Started](docs/tutorials/01-getting-started.md)** | Your first login, your first `bitsafe list`, your first approval prompt dialog that you didn't expect. The full experience. |
+| **[Tutorial: Getting Started](docs/tutorials/01-getting-started.md)** | Your first login, your first `grimoire list`, your first approval prompt dialog that you didn't expect. The full experience. |
 | **[Tutorial: SSH Agent](docs/tutorials/02-ssh-agent.md)** | Delete your `~/.ssh/id_ed25519`. Actually don't. Back it up first. Then set this up. Then delete it. Actually keep the backup. |
-| **[Tutorial: Secret Injection](docs/tutorials/03-secret-injection.md)** | `bitsafe run` and the art of never putting secrets in shell history again. Your `~/.bash_history` will finally be something you could show a security auditor. |
-| **[Tutorial: Headless Servers](docs/tutorials/04-headless.md)** | Running BitSafe on machines that don't have screens. Which is most servers. Which is arguably the important use case. |
+| **[Tutorial: Secret Injection](docs/tutorials/03-secret-injection.md)** | `grimoire run` and the art of never putting secrets in shell history again. Your `~/.bash_history` will finally be something you could show a security auditor. |
+| **[Tutorial: Headless Servers](docs/tutorials/04-headless.md)** | Running Grimoire on machines that don't have screens. Which is most servers. Which is arguably the important use case. |
 | **[Quick Reference](docs/quickstart.md)** | Every command. No prose. No personality. Just the facts. The anti-README. |
 | **[SSH Agent Reference](docs/ssh-agent.md)** | Everything about the SSH agent you could possibly want to know and several things you didn't. |
 

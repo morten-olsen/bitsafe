@@ -1,4 +1,4 @@
-Guided bug fix workflow for BitSafe.
+Guided bug fix workflow for Grimoire.
 
 Arguments: $ARGUMENTS
 

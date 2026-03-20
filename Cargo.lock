@@ -228,123 +228,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
-name = "bitsafe-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitsafe-common",
- "bitsafe-protocol",
- "clap",
- "clap_complete",
- "dirs",
- "rpassword",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "bitsafe-common"
-version = "0.1.0"
-dependencies = [
- "dirs",
- "libc",
- "serde",
- "thiserror 2.0.18",
- "toml",
- "tracing",
-]
-
-[[package]]
-name = "bitsafe-prompt"
-version = "0.1.0"
-dependencies = [
- "clap",
- "rpassword",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "tracing-subscriber",
- "zeroize",
-]
-
-[[package]]
-name = "bitsafe-protocol"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "chrono",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
- "x25519-dalek",
- "zeroize",
-]
-
-[[package]]
-name = "bitsafe-sdk"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64",
- "bitwarden-api-api",
- "bitwarden-auth",
- "bitwarden-core",
- "bitwarden-crypto",
- "bitwarden-pm",
- "bitwarden-ssh",
- "bitwarden-state",
- "bitwarden-sync",
- "bitwarden-vault",
- "chrono",
- "dirs",
- "ed25519-dalek 2.2.0",
- "reqwest",
- "rsa 0.9.10",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sha2 0.10.9",
- "ssh-key 0.7.0-rc.9",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "bitsafe-service"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "bitsafe-common",
- "bitsafe-protocol",
- "bitsafe-sdk",
- "chrono",
- "libc",
- "serde",
- "serde_json",
- "ssh-agent-lib",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "zeroize",
-]
-
-[[package]]
 name = "bitwarden-api-api"
 version = "2.0.0"
 source = "git+https://github.com/bitwarden/sdk-internal?rev=9e3be8abbe71319620e964a90d79539bf9d19d9c#9e3be8abbe71319620e964a90d79539bf9d19d9c"
@@ -1957,6 +1840,123 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eecf2d5dc9b66b732b97707a0210906b1d30523eb773193ab777c0c84b3e8d5"
 dependencies = [
  "polyval",
+]
+
+[[package]]
+name = "grimoire-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "clap_complete",
+ "dirs",
+ "grimoire-common",
+ "grimoire-protocol",
+ "rpassword",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "grimoire-common"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "libc",
+ "serde",
+ "thiserror 2.0.18",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "grimoire-prompt"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "rpassword",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "tracing-subscriber",
+ "zeroize",
+]
+
+[[package]]
+name = "grimoire-protocol"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "chrono",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "grimoire-sdk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "bitwarden-api-api",
+ "bitwarden-auth",
+ "bitwarden-core",
+ "bitwarden-crypto",
+ "bitwarden-pm",
+ "bitwarden-ssh",
+ "bitwarden-state",
+ "bitwarden-sync",
+ "bitwarden-vault",
+ "chrono",
+ "dirs",
+ "ed25519-dalek 2.2.0",
+ "reqwest",
+ "rsa 0.9.10",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sha2 0.10.9",
+ "ssh-key 0.7.0-rc.9",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "grimoire-service"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "grimoire-common",
+ "grimoire-protocol",
+ "grimoire-sdk",
+ "libc",
+ "serde",
+ "serde_json",
+ "ssh-agent-lib",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]

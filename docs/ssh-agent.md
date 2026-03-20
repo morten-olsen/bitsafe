@@ -1,14 +1,14 @@
 # SSH Agent
 
-BitSafe includes an SSH agent that serves keys stored in your Bitwarden vault. SSH clients connect to the agent socket, and the agent uses the vault's decrypted keys to sign authentication challenges — no private key files on disk.
+Grimoire includes an SSH agent that serves keys stored in your Bitwarden vault. SSH clients connect to the agent socket, and the agent uses the vault's decrypted keys to sign authentication challenges — no private key files on disk.
 
 ## Architecture
 
-The SSH agent runs embedded inside `bitsafe-service` as a second socket listener. It accesses vault state directly — no JSON-RPC round-trip.
+The SSH agent runs embedded inside `grimoire-service` as a second socket listener. It accesses vault state directly — no JSON-RPC round-trip.
 
 ```
 ┌──────────┐        SSH protocol        ┌──────────────────────────────┐
-│ ssh, git │ ──────────────────────────▸ │ bitsafe-service              │
+│ ssh, git │ ──────────────────────────▸ │ grimoire-service              │
 │          │ ◂────────────────────────── │   ├─ main socket (RPC)       │
 └──────────┘       (unix socket)        │   └─ ssh-agent socket        │
                                         │        peer_cred() → PID     │
@@ -17,7 +17,7 @@ The SSH agent runs embedded inside `bitsafe-service` as a second socket listener
                                         └──────────────────────────────┘
 ```
 
-- Socket: `$XDG_RUNTIME_DIR/bitsafe/ssh-agent.sock` (mode `0600`)
+- Socket: `$XDG_RUNTIME_DIR/grimoire/ssh-agent.sock` (mode `0600`)
 - Enabled by default (`ssh_agent.enabled = true` in config)
 - Peer PID extracted via `SO_PEERCRED` on each connection for approval scoping
 
@@ -28,7 +28,7 @@ The SSH agent runs embedded inside `bitsafe-service` as a second socket listener
 The agent is enabled by default. To disable it:
 
 ```toml
-# ~/.config/bitsafe/config.toml
+# ~/.config/grimoire/config.toml
 [ssh_agent]
 enabled = false
 ```
@@ -38,13 +38,13 @@ enabled = false
 Add to your shell profile (`~/.bashrc`, `~/.zshrc`):
 
 ```sh
-export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/bitsafe/ssh-agent.sock"
+export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/grimoire/ssh-agent.sock"
 ```
 
 Or use the helper:
 
 ```sh
-export SSH_AUTH_SOCK="$(bitsafe service ssh-socket)"
+export SSH_AUTH_SOCK="$(grimoire service ssh-socket)"
 ```
 
 ### 3. Store SSH keys in Bitwarden
@@ -80,7 +80,7 @@ ssh -T git@github.com   # Test signing
 ### Prerequisites
 
 - The vault must be **unlocked** — if locked, the agent returns an empty key list and signing is impossible
-- The caller must have **access approval** — either pre-authorized via `bitsafe authorize`, granted by a GUI prompt, or approval disabled in config
+- The caller must have **access approval** — either pre-authorized via `grimoire authorize`, granted by a GUI prompt, or approval disabled in config
 
 ## Access Approval
 
@@ -102,7 +102,7 @@ SSH signing uses the same scoped access approval system as CLI vault commands (`
 On a machine with a display, the first signing request triggers a GUI prompt:
 
 ```
-ssh git@github.com    # GUI dialog appears: "BitSafe: approve SSH signing"
+ssh git@github.com    # GUI dialog appears: "Grimoire: approve SSH signing"
                       # approve via fingerprint/PIN/password
                       # signing proceeds, approval cached for 5 minutes
 ```
@@ -114,7 +114,7 @@ Subsequent signing requests within the approval window proceed silently.
 Pre-authorize before using SSH keys:
 
 ```sh
-bitsafe authorize      # prompts for master password in terminal
+grimoire authorize      # prompts for master password in terminal
 ssh git@github.com     # signing works — approval is cached
 ```
 
@@ -123,16 +123,16 @@ The `authorize` command grants approval scoped to your terminal session. Any SSH
 Unlocking the vault with a direct password also grants approval:
 
 ```sh
-bitsafe unlock --terminal   # or just run any vault command (auto-prompts)
+grimoire unlock --terminal   # or just run any vault command (auto-prompts)
 ssh git@github.com          # already approved from the unlock
 ```
 
 ### Headless / CI environments
 
-Access approval cannot be disabled. In headless environments, use `bitsafe authorize` to pre-approve access for the terminal session:
+Access approval cannot be disabled. In headless environments, use `grimoire authorize` to pre-approve access for the terminal session:
 
 ```bash
-bitsafe authorize    # prompts for master password in terminal
+grimoire authorize    # prompts for master password in terminal
 ssh git@github.com   # approved for this session
 ```
 
@@ -144,9 +144,9 @@ The vault auto-locks after a period of inactivity (default: 900 seconds / 15 min
 
 - If you only use SSH (no CLI vault commands), the vault will auto-lock after 15 minutes
 - After auto-lock, `ssh-add -l` returns an empty list and signing fails silently
-- To keep the vault alive, any RPC operation (e.g. `bitsafe status`) resets the timer
+- To keep the vault alive, any RPC operation (e.g. `grimoire status`) resets the timer
 
-The auto-lock timeout is hardcoded at 15 minutes and cannot be changed. If you need the vault to stay alive longer, any CLI vault command (e.g. `bitsafe status`) resets the timer.
+The auto-lock timeout is hardcoded at 15 minutes and cannot be changed. If you need the vault to stay alive longer, any CLI vault command (e.g. `grimoire status`) resets the timer.
 
 ## Security Considerations
 
@@ -162,7 +162,7 @@ Access approval is scoped to the caller's terminal session by default. A process
 
 The GUI prompt requirement for SSH signing serves the same purpose as for CLI vault operations: defense against blind RCE. An attacker with command execution but no display access cannot approve signing without physical interaction with the GUI dialog.
 
-In headless environments, `bitsafe authorize` provides an equivalent: the attacker would need to know the master password.
+In headless environments, `grimoire authorize` provides an equivalent: the attacker would need to know the master password.
 
 ### Ed25519 only
 
@@ -175,7 +175,7 @@ Private keys are decrypted by the SDK and held in memory for the duration of the
 ## Configuration Reference
 
 ```toml
-# ~/.config/bitsafe/config.toml
+# ~/.config/grimoire/config.toml
 
 [ssh_agent]
 enabled = true              # Enable the embedded SSH agent (default: true)
@@ -195,20 +195,20 @@ Security parameters are hardcoded and not configurable:
 
 ### `ssh-add -l` returns "The agent has no identities"
 
-- **Vault is locked**: run `bitsafe unlock --terminal` or `bitsafe list` (auto-prompts)
-- **No SSH keys in vault**: check Vaultwarden has `EXPERIMENTAL_CLIENT_FEATURE_FLAGS` set, then `bitsafe sync`
+- **Vault is locked**: run `grimoire unlock --terminal` or `grimoire list` (auto-prompts)
+- **No SSH keys in vault**: check Vaultwarden has `EXPERIMENTAL_CLIENT_FEATURE_FLAGS` set, then `grimoire sync`
 - **Wrong socket**: verify `SSH_AUTH_SOCK` points to the correct path
-- **Service not running**: check `systemctl --user status bitsafe`
+- **Service not running**: check `systemctl --user status grimoire`
 
 ### `ssh` fails with "permission denied" or "signing failed"
 
-- **Not approved**: run `bitsafe authorize` in the same terminal session, then retry
+- **Not approved**: run `grimoire authorize` in the same terminal session, then retry
 - **Approval expired**: approvals last `approval_seconds` (default: 5 min). Re-authorize
-- **Auto-locked**: the vault locked due to inactivity. Run `bitsafe status` to check, then unlock
+- **Auto-locked**: the vault locked due to inactivity. Run `grimoire status` to check, then unlock
 - **Key type**: only Ed25519 is supported. Check your vault key type
 
 ### Keys appear in `ssh-add -l` but signing fails
 
-- **Access approval**: most likely cause. Run `bitsafe authorize` and retry
-- Check service logs: `journalctl --user -u bitsafe -f`
+- **Access approval**: most likely cause. Run `grimoire authorize` and retry
+- Check service logs: `journalctl --user -u grimoire -f`
 - The key's private key data may be corrupted or in an unsupported format

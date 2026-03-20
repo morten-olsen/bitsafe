@@ -68,11 +68,11 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bitsafe-${{ runner.os }}
+          name: grimoire-${{ runner.os }}
           path: |
-            target/release/bitsafe
-            target/release/bitsafe-service
-            target/release/bitsafe-prompt
-            native/linux/target/release/bitsafe-prompt-linux
-            native/macos/.build/release/bitsafe-prompt-macos
+            target/release/grimoire
+            target/release/grimoire-service
+            target/release/grimoire-prompt
+            native/linux/target/release/grimoire-prompt-linux
+            native/macos/.build/release/grimoire-prompt-macos
           if-no-files-found: ignore

@@ -25,18 +25,18 @@ bitwarden-auth = { git = "https://github.com/bitwarden/sdk-internal", rev = "<pi
 bitwarden-sync = { git = "https://github.com/bitwarden/sdk-internal", rev = "<pinned>" }
 ```
 
-We pin to a specific git revision rather than tracking a branch. Updates are deliberate: bump the rev, fix any breakage in `bitsafe-sdk`, test, commit.
+We pin to a specific git revision rather than tracking a branch. Updates are deliberate: bump the rev, fix any breakage in `grimoire-sdk`, test, commit.
 
-### Isolation via `bitsafe-sdk` Wrapper Crate
+### Isolation via `grimoire-sdk` Wrapper Crate
 
-All BitSafe code depends on `bitsafe-sdk`, never on `bitwarden-*` crates directly.
+All Grimoire code depends on `grimoire-sdk`, never on `bitwarden-*` crates directly.
 
 **Strategy: Newtypes + selective own types**
 
 - Where the SDK type is stable and useful, wrap it in a newtype: `struct BsCipher(sdk::CipherView)`
 - Where we need a different shape or the SDK type is volatile, define our own type and convert
-- The wrapper exposes a clean, stable API that the rest of BitSafe depends on
-- When updating the pinned SDK rev, only `bitsafe-sdk` needs changes
+- The wrapper exposes a clean, stable API that the rest of Grimoire depends on
+- When updating the pinned SDK rev, only `grimoire-sdk` needs changes
 
 ### Crates We Consume
 
@@ -66,7 +66,7 @@ client.sync().sync();               // vault sync
 
 ### Positive
 
-- **Isolation**: SDK API changes only affect `bitsafe-sdk`
+- **Isolation**: SDK API changes only affect `grimoire-sdk`
 - **No FFI overhead**: Direct Rust dependency, no serialization boundary
 - **Crypto safety**: We inherit `bitwarden-crypto`'s secure memory handling
 - **Deliberate updates**: Pinned rev means no surprise breakage
@@ -75,11 +75,11 @@ client.sync().sync();               // vault sync
 
 - **Build time**: The SDK pulls in many transitive dependencies
 - **No semver**: We must manually verify compatibility on each rev bump
-- **Wrapper maintenance**: The `bitsafe-sdk` crate must be kept in sync
+- **Wrapper maintenance**: The `grimoire-sdk` crate must be kept in sync
 
 ### Upgrade Process
 
 1. Update the pinned rev in workspace `Cargo.toml`
-2. Fix any compilation errors in `bitsafe-sdk`
+2. Fix any compilation errors in `grimoire-sdk`
 3. Run tests
 4. Document changes in `UPGRADING.md`

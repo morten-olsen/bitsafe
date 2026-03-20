@@ -66,11 +66,11 @@ Key lifecycle is managed entirely by `bitwarden-crypto`'s `KeyStore` — we neve
 
 ```ini
 [Unit]
-Description=BitSafe Password Manager Service
+Description=Grimoire Password Manager Service
 
 [Service]
 Type=notify
-ExecStart=/usr/bin/bitsafe-service
+ExecStart=/usr/bin/grimoire-service
 Restart=on-failure
 ```
 

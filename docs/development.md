@@ -1,6 +1,6 @@
 # Development
 
-How features move from idea to shipped code in BitSafe. This is a security product — the development process exists to catch security issues before they land, not after.
+How features move from idea to shipped code in Grimoire. This is a security product — the development process exists to catch security issues before they land, not after.
 
 ## Principles
 

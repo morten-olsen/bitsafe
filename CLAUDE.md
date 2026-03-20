@@ -75,10 +75,10 @@ Individual phases are also available standalone: `/spec`, `/implement`, `/refact
 - `task test` — all tests. `task install` — install to `~/.cargo/bin`
 - **Rust workspace**: `cargo check --workspace` / `cargo test --workspace`
 - **Native prompts** (outside workspace, optional):
-  - macOS: `cd native/macos && swift build -c release` → `bitsafe-prompt-macos`
-  - Linux: `cd native/linux && cargo build --release` (needs `libgtk-4-dev`, `libadwaita-1-dev`) → `bitsafe-prompt-linux`
-- Binaries: `bitsafe` (CLI), `bitsafe-service` (daemon + SSH agent), `bitsafe-prompt` (fallback), `bitsafe-prompt-{macos,linux}` (native UI)
-- **Prompt binary discovery order**: `bitsafe-prompt-{platform}` next to service → `bitsafe-prompt` next to service → PATH lookup → terminal fallback
+  - macOS: `cd native/macos && swift build -c release` → `grimoire-prompt-macos`
+  - Linux: `cd native/linux && cargo build --release` (needs `libgtk-4-dev`, `libadwaita-1-dev`) → `grimoire-prompt-linux`
+- Binaries: `grimoire` (CLI), `grimoire-service` (daemon + SSH agent), `grimoire-prompt` (fallback), `grimoire-prompt-{macos,linux}` (native UI)
+- **Prompt binary discovery order**: `grimoire-prompt-{platform}` next to service → `grimoire-prompt` next to service → PATH lookup → terminal fallback
 
 ## Auth Architecture — Matching the Official CLI
 
@@ -105,25 +105,25 @@ This avoids all Vaultwarden compatibility issues with the SDK's generated API bi
 - Currently pinned: `digest 0.11.1` (yanked but required), `reqwest-middleware 0.4.2` (0.5.x breaks SDK)
 - See `UPGRADING.md` for the full process
 
-## SDK Wrapper (`bitsafe-sdk`)
+## SDK Wrapper (`grimoire-sdk`)
 
 Full investigation documented in `docs/sdk-integration.md`.
 
-- `BitsafeClient` wraps `PasswordManagerClient` behind `Arc<Mutex<>>` — all sub-clients share the lock
-- All other crates depend on `bitsafe-sdk`, never on `bitwarden-*` directly
+- `GrimoireClient` wraps `PasswordManagerClient` behind `Arc<Mutex<>>` — all sub-clients share the lock
+- All other crates depend on `grimoire-sdk`, never on `bitwarden-*` directly
 - **Do NOT use the SDK for HTTP** — the SDK's generated API bindings (`bitwarden-api-identity`, `bitwarden-api-api`) are incompatible with Vaultwarden in multiple ways. The official Bitwarden CLI doesn't use them either. See `docs/sdk-integration.md` for the full investigation.
 - **SDK is crypto-only** — we use `MasterPasswordAuthenticationData::derive()`, `initialize_user_crypto()`, and `vault().ciphers().list()/get()/totp()`. Everything else is our own HTTP calls.
 - **Token management**: `PasswordManagerClient::new_with_client_tokens()` + our `TokenStore` implementing `ClientManagedTokens`. We set the access token after our own login HTTP call.
 - **Cipher repository population**: sync is our own HTTP GET to `/api/sync`. We parse the JSON, deserialize individual `CipherDetailsResponseModel` entries, and store them in our in-memory repository. The SDK then decrypts from that repository.
 - **State database**: SDK needs `platform().state().initialize_database()` with SQLite config + `get_sdk_managed_migrations()` before any crypto ops. Also needs client-managed in-memory repos for `Cipher`, `Folder`, `LocalUserDataKeyState`, `UserKeyState`, `EphemeralPinEnvelopeState`.
-- **Lock = drop + recreate client** — the SDK has no explicit lock/clear-crypto. We recreate `BitsafeClient` on lock but preserve `LoginState` so unlock doesn't require re-login.
-- **Login state persists to disk** — saved to `~/.local/share/bitsafe/login.json` (mode `0600`) after login. Service starts in `Locked` state if this file exists. Deleted on logout. Contains only email + server_url.
+- **Lock = drop + recreate client** — the SDK has no explicit lock/clear-crypto. We recreate `GrimoireClient` on lock but preserve `LoginState` so unlock doesn't require re-login.
+- **Login state persists to disk** — saved to `~/.local/share/grimoire/login.json` (mode `0600`) after login. Service starts in `Locked` state if this file exists. Deleted on logout. Contains only email + server_url.
 - **V1 account assumption**: We construct `WrappedAccountCryptographicState::V1` from the login response's `PrivateKey` field. V2 accounts (COSE) need the full `PrivateKeysResponseModel` from sync — not yet handled.
-- **`bitsafe run` uses exec** — after resolving `bitsafe:<id>/<field>` references in env vars, the process is replaced via `execvp()`. No wrapper process, no TTY breakage. All resolution errors must happen before exec. See `docs/secret-injection.md` and `specs/007-secret-injection.md`.
+- **`grimoire run` uses exec** — after resolving `grimoire:<id>/<field>` references in env vars, the process is replaced via `execvp()`. No wrapper process, no TTY breakage. All resolution errors must happen before exec. See `docs/secret-injection.md` and `specs/007-secret-injection.md`.
 - **Vaultwarden SSH key requirement**: Vaultwarden must have `EXPERIMENTAL_CLIENT_FEATURE_FLAGS=fido2-vault-credentials,ssh-key-vault-item,ssh-agent` set — without this, SSH key ciphers (type 5) are filtered from the sync response entirely
 - SSH signing currently supports Ed25519 only; RSA/ECDSA can be added
-- **SSH agent enforces access approval** — the embedded agent extracts the SSH client's peer PID via `SO_PEERCRED` and checks the approval cache before signing. If not approved, it tries GUI prompt (biometric/PIN/password); if no GUI, signing fails. Users pre-authorize from headless sessions via `bitsafe authorize`. See `docs/ssh-agent.md`.
-- **`bitsafe authorize`** — CLI command for headless/SSH sessions. Prompts for master password in terminal, verifies against the server (prelogin + derive + token request), then refreshes session + grants scoped access approval. Same backoff rules as login/unlock.
+- **SSH agent enforces access approval** — the embedded agent extracts the SSH client's peer PID via `SO_PEERCRED` and checks the approval cache before signing. If not approved, it tries GUI prompt (biometric/PIN/password); if no GUI, signing fails. Users pre-authorize from headless sessions via `grimoire authorize`. See `docs/ssh-agent.md`.
+- **`grimoire authorize`** — CLI command for headless/SSH sessions. Prompts for master password in terminal, verifies against the server (prelogin + derive + token request), then refreshes session + grants scoped access approval. Same backoff rules as login/unlock.
 - **CLI auto-prompt** — vault commands (`list`, `get`, `totp`, `sync`, `run`) auto-prompt for master password when the vault is locked (error 1000) or approval is needed (error 1006/1008/1011). No separate `unlock` step required.
 - **Unlock grants approval when password is direct** — `handle_unlock` grants scoped access approval when the password is provided in the request (CLI/SSH), not via GUI prompt. This means one password entry handles both unlock and approval.
 
@@ -135,7 +135,7 @@ Full investigation documented in `docs/sdk-integration.md`.
 - **`set_tokens` is pub(crate)**: Can't call it from outside `bitwarden_core`. Must use `ClientManagedTokens` trait instead.
 - **Cipher `data` field**: SDK expects `Option<String>`, Vaultwarden sends a JSON object. We stringify it before deserialization in `sync.rs`. The field is a legacy duplicate — the SDK reads from the typed `login`/`card`/`identity` fields instead.
 
-## Protocol (`bitsafe-protocol`)
+## Protocol (`grimoire-protocol`)
 
 - `RequestParams` is `#[serde(untagged)]` — deserialization tries variants in declaration order. Structs with all-optional fields (like `UnlockParams`, `VaultListParams`) will greedily match any input. Use `#[serde(deny_unknown_fields)]` on every variant struct to prevent false matches.
 - `LoginParams.password` and `UnlockParams.password` are both `Option<String>` — `None` means "service should spawn the GUI prompt agent"
@@ -150,9 +150,9 @@ Full investigation documented in `docs/sdk-integration.md`.
 - Master password: exponential backoff (1s, 2s, 4s... capped 30s), enforced server-side
 - State is behind `Arc<RwLock<ServiceState>>` — read lock for queries, write lock for mutations
 - Auto-lock worker checks every 30s with TOCTOU double-check pattern (read check, then write-lock + re-check)
-- **Config is loaded once at startup** — changes to `~/.config/bitsafe/config.toml` require service restart
+- **Config is loaded once at startup** — changes to `~/.config/grimoire/config.toml` require service restart
 
-## Prompt Agent (`bitsafe-prompt`)
+## Prompt Agent (`grimoire-prompt`)
 
 - Spawned by the service as a subprocess, not linked as a library
 - Binary discovery: checks next to `current_exe()`, then `PATH`

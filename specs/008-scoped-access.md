@@ -14,7 +14,7 @@ We want a model where:
 - The vault is **unlocked** (keys in memory, ready to decrypt), but
 - Individual operations require **approval** scoped to a process tree
 - Approval is lightweight (fingerprint, PIN, system password) — not the master password
-- Approved access covers the approved process and its children (so `bitsafe run -- docker compose up` approves docker and all its child processes)
+- Approved access covers the approved process and its children (so `grimoire run -- docker compose up` approves docker and all its child processes)
 
 ## Decision
 
@@ -51,7 +51,7 @@ Layer 2: Access Approval (fingerprint / PIN / system password)
 
 When a process requests a sensitive operation, the service:
 
-1. Gets the **peer PID** from `SO_PEERCRED` (the `bitsafe` CLI process)
+1. Gets the **peer PID** from `SO_PEERCRED` (the `grimoire` CLI process)
 2. Walks up the process tree via `/proc/<pid>/status` (Linux) or `proc_pidinfo` (macOS) to find the **session leader** — the shell or terminal that spawned the command
 3. Prompts the user for approval via the GUI prompt agent (fingerprint, PIN, or system password)
 4. Records an **approval grant**: `(session_leader_pid, expiry_time)`
@@ -60,10 +60,10 @@ When a process requests a sensitive operation, the service:
 ```
 Terminal (PID 1000, session leader)    ← approval is anchored here
   └── zsh (PID 1001)
-       ├── bitsafe get (PID 1050)      ← triggers approval prompt
-       ├── bitsafe run (PID 1060)      ← already approved (same session)
+       ├── grimoire get (PID 1050)      ← triggers approval prompt
+       ├── grimoire run (PID 1060)      ← already approved (same session)
        │    └── docker (PID 1061)      ← already approved (child of approved tree)
-       └── bitsafe get (PID 1070)      ← already approved
+       └── grimoire get (PID 1070)      ← already approved
 ```
 
 A malicious process spawned from a different session (e.g., a cron job, a compromised service, a reverse shell) would be a **different session leader** and require its own approval:
@@ -71,7 +71,7 @@ A malicious process spawned from a different session (e.g., a cron job, a compro
 ```
 sshd (PID 2000, session leader)        ← different session
   └── reverse-shell (PID 2001)
-       └── bitsafe get (PID 2050)      ← triggers NEW approval prompt
+       └── grimoire get (PID 2050)      ← triggers NEW approval prompt
                                           (attacker can't complete GUI prompt)
 ```
 
@@ -86,7 +86,7 @@ approval_for = "session"        # "session" | "pid" | "connection"
 
 - **`session`** (default): Approval covers all processes in the same terminal session. Best balance of security and usability.
 - **`pid`**: Approval covers only the exact requesting PID and its children. More restrictive.
-- **`connection`**: Approval covers a single socket connection. Most restrictive — each `bitsafe get` requires re-approval.
+- **`connection`**: Approval covers a single socket connection. Most restrictive — each `grimoire get` requires re-approval.
 
 ### Approval Verification Methods
 
@@ -96,7 +96,7 @@ Approval does NOT use the master password — the vault is already unlocked. Ins
 2. **PIN** — fallback, same PIN as session re-verification
 3. **System password** — via `pkexec` (Linux) or `osascript` with admin privileges (macOS)
 
-The prompt agent (`bitsafe-prompt`) already handles all three.
+The prompt agent (`grimoire-prompt`) already handles all three.
 
 ### Protocol Changes
 
@@ -164,9 +164,9 @@ fn get_session_leader(pid: u32) -> Option<u32> {
 | SSH session (no display) | Falls back to terminal PIN prompt if `prompt.method = auto` |
 | Process dies during approval | Approval still granted (by session, not PID) |
 | Session leader dies | Approval expires; new session needs new approval |
-| `bitsafe run` (exec'd process) | The exec'd process has the same PID, same session — approval carries over |
-| Systemd service calling bitsafe | Different session, requires its own approval (or use `require_approval = false` for machine-to-machine) |
-| `sudo bitsafe get` | Different UID → rejected by socket UID check (existing security) |
+| `grimoire run` (exec'd process) | The exec'd process has the same PID, same session — approval carries over |
+| Systemd service calling grimoire | Different session, requires its own approval (or use `require_approval = false` for machine-to-machine) |
+| `sudo grimoire get` | Different UID → rejected by socket UID check (existing security) |
 
 ## Consequences
 
@@ -175,7 +175,7 @@ fn get_session_leader(pid: u32) -> Option<u32> {
 - **RCE resistance**: A compromised process in a different session can't silently read secrets — the GUI prompt will appear on the user's screen and the attacker can't interact with it
 - **Minimal friction**: Approval covers the whole terminal session for 5 minutes. Normal interactive use feels unchanged.
 - **No master password for approval**: Lightweight verification (fingerprint takes <1s)
-- **`bitsafe run` compatible**: exec preserves PID and session, so approval carries over to the injected process
+- **`grimoire run` compatible**: exec preserves PID and session, so approval carries over to the injected process
 
 ### Negative
 
@@ -192,7 +192,7 @@ Threat: RCE from a different session (e.g., compromised service, reverse shell)
 
 Threat: RCE from same session (e.g., malicious npm script in your terminal)
   → Partially mitigated: if within approval window, attacker has access
-  → Mitigation: short approval_seconds, use `bitsafe run` to scope env vars
+  → Mitigation: short approval_seconds, use `grimoire run` to scope env vars
 
 Threat: Physical access with unlocked vault
   → Mitigated: approval required for each session, biometric proves physical presence

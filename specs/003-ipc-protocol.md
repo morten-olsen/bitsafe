@@ -16,7 +16,7 @@ The service and clients communicate over IPC. We need a protocol that is:
 
 ### Transport: Unix Domain Socket
 
-- Path: `$XDG_RUNTIME_DIR/bitsafe/bitsafe.sock`
+- Path: `$XDG_RUNTIME_DIR/grimoire/grimoire.sock`
 - Socket mode: `0600` (owner-only)
 - `SO_PEERCRED` validation on each connection (same UID check on Linux)
 - Same trust model as `ssh-agent`

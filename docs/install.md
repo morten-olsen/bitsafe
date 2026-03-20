@@ -1,50 +1,50 @@
 # Installation Guide
 
-BitSafe runs on Linux and macOS, with experimental support for Android via Termux. This guide covers every way to get it running.
+Grimoire runs on Linux and macOS, with experimental support for Android via Termux. This guide covers every way to get it running.
 
 ## From Prebuilt Binaries (Recommended)
 
 Download the latest release for your platform from [GitHub Releases](../../releases).
 
 Each release archive contains:
-- `bitsafe` — the CLI client
-- `bitsafe-service` — the background daemon
-- `bitsafe-prompt` — the generic GUI/terminal prompt agent
-- `bitsafe-prompt-linux` or `bitsafe-prompt-macos` — the native prompt (when available)
+- `grimoire` — the CLI client
+- `grimoire-service` — the background daemon
+- `grimoire-prompt` — the generic GUI/terminal prompt agent
+- `grimoire-prompt-linux` or `grimoire-prompt-macos` — the native prompt (when available)
 - `contrib/` — systemd and launchd service files
 
 ### Linux (x86_64 / aarch64)
 
 ```bash
 # Download and extract
-tar xzf bitsafe-v*.tar.gz
-cd bitsafe-v*
+tar xzf grimoire-v*.tar.gz
+cd grimoire-v*
 
 # Install binaries
-sudo install -m 755 bitsafe bitsafe-service bitsafe-prompt /usr/local/bin/
+sudo install -m 755 grimoire grimoire-service grimoire-prompt /usr/local/bin/
 
 # Install native prompt if present
-[ -f bitsafe-prompt-linux ] && sudo install -m 755 bitsafe-prompt-linux /usr/local/bin/
+[ -f grimoire-prompt-linux ] && sudo install -m 755 grimoire-prompt-linux /usr/local/bin/
 
 # Set up the service (auto-start on login)
-bitsafe service install
+grimoire service install
 ```
 
 ### macOS (Apple Silicon / Intel)
 
 ```bash
 # Download and extract
-tar xzf bitsafe-v*.tar.gz
-cd bitsafe-v*
+tar xzf grimoire-v*.tar.gz
+cd grimoire-v*
 
 # Install binaries
-sudo install -m 755 bitsafe bitsafe-service bitsafe-prompt /usr/local/bin/
+sudo install -m 755 grimoire grimoire-service grimoire-prompt /usr/local/bin/
 
 # Install native prompt if present
-[ -f bitsafe-prompt-macos ] && sudo install -m 755 bitsafe-prompt-macos /usr/local/bin/
+[ -f grimoire-prompt-macos ] && sudo install -m 755 grimoire-prompt-macos /usr/local/bin/
 
 # Set up the service (auto-start on login)
-bitsafe service install
+grimoire service install
 ```
 
 ## From Source
@@ -81,9 +81,9 @@ Or manually:
 cargo build --workspace --release
 
 # Install core binaries
-cargo install --path crates/bitsafe-cli
-cargo install --path crates/bitsafe-service
-cargo install --path crates/bitsafe-prompt
+cargo install --path crates/grimoire-cli
+cargo install --path crates/grimoire-service
+cargo install --path crates/grimoire-prompt
 ```
 
 ### Native Prompts (Optional but Recommended)
@@ -104,7 +104,7 @@ sudo pacman -S gtk4 libadwaita
 
 # Build and install
 cd native/linux && cargo build --release
-cp target/release/bitsafe-prompt-linux ~/.cargo/bin/
+cp target/release/grimoire-prompt-linux ~/.cargo/bin/
 ```
 
 **macOS (Swift):**
@@ -115,12 +115,12 @@ xcode-select --install
 
 # Build and install
 cd native/macos && swift build -c release
-cp .build/release/bitsafe-prompt-macos ~/.cargo/bin/
+cp .build/release/grimoire-prompt-macos ~/.cargo/bin/
 ```
 
 The service discovers prompt binaries in this order:
-1. `bitsafe-prompt-{platform}` next to the service binary
-2. `bitsafe-prompt` next to the service binary
+1. `grimoire-prompt-{platform}` next to the service binary
+2. `grimoire-prompt` next to the service binary
 3. PATH lookup
 4. Terminal fallback (always available)
 
@@ -131,7 +131,7 @@ The service discovers prompt binaries in this order:
 The easiest way:
 
 ```bash
-bitsafe service install
+grimoire service install
 ```
 
 This creates a systemd user unit (Linux) or launchd LaunchAgent (macOS) and starts the service immediately.
@@ -139,7 +139,7 @@ This creates a systemd user unit (Linux) or launchd LaunchAgent (macOS) and star
 To stop and remove:
 
 ```bash
-bitsafe service uninstall
+grimoire service uninstall
 ```
 
 ### Manual Start
@@ -147,7 +147,7 @@ bitsafe service uninstall
 If you prefer to run the service yourself:
 
 ```bash
-bitsafe-service
+grimoire-service
 ```
 
 It runs in the foreground and logs to stderr. You can background it, wrap it in a tmux session, or manage it however you like.
@@ -155,7 +155,7 @@ It runs in the foreground and logs to stderr. You can background it, wrap it in 
 ### Verify
 
 ```bash
-bitsafe status
+grimoire status
 ```
 
 Should show `Service is running` and the current vault state.
@@ -164,18 +164,18 @@ Should show `Service is running` and the current vault state.
 
 ```bash
 # Bash — add to ~/.bashrc
-bitsafe completions bash >> ~/.bashrc
+grimoire completions bash >> ~/.bashrc
 
 # Zsh — create completion file
-bitsafe completions zsh > ~/.zfunc/_bitsafe
+grimoire completions zsh > ~/.zfunc/_grimoire
 
 # Fish
-bitsafe completions fish > ~/.config/fish/completions/bitsafe.fish
+grimoire completions fish > ~/.config/fish/completions/grimoire.fish
 ```
 
 ## Android (Termux)
 
-BitSafe works in Termux with terminal-only prompts (no native GUI). This is experimental.
+Grimoire works in Termux with terminal-only prompts (no native GUI). This is experimental.
 
 ### Prerequisites
 
@@ -190,11 +190,11 @@ pkg install openssl
 ### Build
 
 ```bash
-git clone https://github.com/user/bitsafe.git
-cd bitsafe
-cargo install --path crates/bitsafe-cli
-cargo install --path crates/bitsafe-service
-cargo install --path crates/bitsafe-prompt
+git clone https://github.com/user/grimoire.git
+cd grimoire
+cargo install --path crates/grimoire-cli
+cargo install --path crates/grimoire-service
+cargo install --path crates/grimoire-prompt
 ```
 
 ### Configuration
@@ -202,7 +202,7 @@ cargo install --path crates/bitsafe-prompt
 Since Termux has no GUI environment, configure the prompt to always use terminal mode:
 
 ```toml
-# ~/.config/bitsafe/config.toml
+# ~/.config/grimoire/config.toml
 [server]
 url = "https://vault.example.com"
 
@@ -210,25 +210,25 @@ url = "https://vault.example.com"
 method = "terminal"
 ```
 
-Access approval is always required. On Termux, use `bitsafe authorize` to grant approval for your terminal session (prompts for master password).
+Access approval is always required. On Termux, use `grimoire authorize` to grant approval for your terminal session (prompts for master password).
 
 ### Running
 
 Start the service manually:
 
 ```bash
-bitsafe-service &
+grimoire-service &
 ```
 
 For auto-start on boot, you can use [Termux:Boot](https://wiki.termux.com/wiki/Termux:Boot):
 
 ```bash
 mkdir -p ~/.termux/boot
-cat > ~/.termux/boot/bitsafe.sh << 'EOF'
+cat > ~/.termux/boot/grimoire.sh << 'EOF'
 #!/data/data/com.termux/files/usr/bin/sh
-bitsafe-service &
+grimoire-service &
 EOF
-chmod +x ~/.termux/boot/bitsafe.sh
+chmod +x ~/.termux/boot/grimoire.sh
 ```
 
 ### Limitations on Termux
@@ -236,11 +236,11 @@ chmod +x ~/.termux/boot/bitsafe.sh
 - No biometric or GUI prompts — terminal password entry only
 - No `mlockall` or `PR_SET_DUMPABLE` — Android's security model is different
 - SSH agent works if you set `SSH_AUTH_SOCK` correctly
-- Access approval works via `bitsafe authorize` (master password in terminal)
+- Access approval works via `grimoire authorize` (master password in terminal)
 
 ## Configuration
 
-Create `~/.config/bitsafe/config.toml`:
+Create `~/.config/grimoire/config.toml`:
 
 ```toml
 [server]
@@ -280,17 +280,17 @@ Without it, SSH key ciphers (type 5) are silently filtered from sync responses. 
 
 ```bash
 # Remove service auto-start
-bitsafe service uninstall
+grimoire service uninstall
 
 # Remove binaries
-rm ~/.cargo/bin/bitsafe ~/.cargo/bin/bitsafe-service ~/.cargo/bin/bitsafe-prompt
-rm -f ~/.cargo/bin/bitsafe-prompt-linux ~/.cargo/bin/bitsafe-prompt-macos
+rm ~/.cargo/bin/grimoire ~/.cargo/bin/grimoire-service ~/.cargo/bin/grimoire-prompt
+rm -f ~/.cargo/bin/grimoire-prompt-linux ~/.cargo/bin/grimoire-prompt-macos
 
 # Remove data (login state, logs)
-rm -rf ~/.local/share/bitsafe
+rm -rf ~/.local/share/grimoire
 
 # Remove config
-rm -rf ~/.config/bitsafe
+rm -rf ~/.config/grimoire
 ```
 
 ## Next Steps

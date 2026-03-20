@@ -1,6 +1,6 @@
 # SDK Integration
 
-How BitSafe consumes `bitwarden/sdk-internal` and why.
+How Grimoire consumes `bitwarden/sdk-internal` and why.
 
 ## What the SDK Is and Isn't Used For
 

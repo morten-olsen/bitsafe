@@ -67,20 +67,20 @@ jobs:
       - name: Package
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          ARCHIVE="bitsafe-${TAG}-${{ matrix.target }}"
+          ARCHIVE="grimoire-${TAG}-${{ matrix.target }}"
           mkdir -p "${ARCHIVE}"
 
           # Core binaries
-          cp target/${{ matrix.target }}/release/bitsafe "${ARCHIVE}/" 2>/dev/null || true
-          cp target/${{ matrix.target }}/release/bitsafe-service "${ARCHIVE}/" 2>/dev/null || true
-          cp target/${{ matrix.target }}/release/bitsafe-prompt "${ARCHIVE}/" 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/grimoire "${ARCHIVE}/" 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/grimoire-service "${ARCHIVE}/" 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/grimoire-prompt "${ARCHIVE}/" 2>/dev/null || true
 
           # Native prompt (built for host architecture, not cross-compiled)
-          if [ -f native/linux/target/release/bitsafe-prompt-linux ]; then
-            cp native/linux/target/release/bitsafe-prompt-linux "${ARCHIVE}/"
+          if [ -f native/linux/target/release/grimoire-prompt-linux ]; then
+            cp native/linux/target/release/grimoire-prompt-linux "${ARCHIVE}/"
           fi
-          if [ -f native/macos/.build/release/bitsafe-prompt-macos ]; then
-            cp native/macos/.build/release/bitsafe-prompt-macos "${ARCHIVE}/"
+          if [ -f native/macos/.build/release/grimoire-prompt-macos ]; then
+            cp native/macos/.build/release/grimoire-prompt-macos "${ARCHIVE}/"
           fi
 
           # Service files
