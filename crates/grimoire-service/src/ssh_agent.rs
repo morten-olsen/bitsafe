@@ -30,6 +30,25 @@ impl ssh_agent_lib::agent::Agent<tokio::net::UnixListener> for SshAgentHandler {
         &mut self,
         socket: &tokio::net::UnixStream,
     ) -> impl ssh_agent_lib::agent::Session {
+        // Verify peer UID matches ours — defense-in-depth matching the main socket check.
+        #[cfg(unix)]
+        if let Ok(cred) = socket.peer_cred() {
+            // SAFETY: getuid() is a read-only syscall with no preconditions.
+            let my_uid = unsafe { libc::getuid() };
+            if cred.uid() != my_uid {
+                tracing::warn!(
+                    peer_uid = cred.uid(),
+                    my_uid,
+                    "SSH agent: rejecting connection from different user"
+                );
+                return SshAgentSession {
+                    state: self.state.clone(),
+                    peer_pid: None,
+                    rejected: true,
+                };
+            }
+        }
+
         let peer_pid = socket
             .peer_cred()
             .ok()
@@ -38,6 +57,7 @@ impl ssh_agent_lib::agent::Agent<tokio::net::UnixListener> for SshAgentHandler {
         SshAgentSession {
             state: self.state.clone(),
             peer_pid,
+            rejected: false,
         }
     }
 }
@@ -48,6 +68,8 @@ impl ssh_agent_lib::agent::Agent<tokio::net::UnixListener> for SshAgentHandler {
 pub struct SshAgentSession {
     state: SharedState,
     peer_pid: Option<u32>,
+    /// Set to true if the UID check failed — all operations return empty/error.
+    rejected: bool,
 }
 
 #[async_trait::async_trait]
@@ -55,6 +77,9 @@ impl ssh_agent_lib::agent::Session for SshAgentSession {
     async fn request_identities(
         &mut self,
     ) -> Result<Vec<Identity>, ssh_agent_lib::error::AgentError> {
+        if self.rejected {
+            return Ok(vec![]);
+        }
         let s = self.state.read().await;
         if s.vault_state != VaultState::Unlocked {
             return Ok(vec![]); // Locked or logged out — return empty
@@ -88,6 +113,9 @@ impl ssh_agent_lib::agent::Session for SshAgentSession {
         &mut self,
         request: SignRequest,
     ) -> Result<ssh_key::Signature, ssh_agent_lib::error::AgentError> {
+        if self.rejected {
+            return Err(agent_err("Connection rejected"));
+        }
         // Check vault is unlocked
         {
             let s = self.state.read().await;
