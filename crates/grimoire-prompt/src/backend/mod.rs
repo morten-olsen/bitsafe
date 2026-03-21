@@ -13,6 +13,7 @@ pub enum PromptError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Backend error: {0}")]
+    #[allow(dead_code)]
     Backend(String),
     #[error("Biometric not available")]
     BiometricUnavailable,
@@ -30,6 +31,7 @@ pub trait PromptBackend {
     fn verify_biometric(&self, reason: &str) -> Result<bool, PromptError>;
 
     /// Name of this backend for logging.
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
 }
 

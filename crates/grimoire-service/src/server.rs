@@ -78,7 +78,7 @@ pub async fn run(config: Config) -> Result<()> {
                     Ok((stream, _addr)) => {
                         // Verify peer credentials (same UID).
                         // Uses SO_PEERCRED on Linux, getpeereid on macOS.
-                        let mut peer_pid: Option<u32> = None;
+                        let peer_pid: Option<u32>;
 
                         #[cfg(unix)]
                         {
@@ -101,6 +101,11 @@ pub async fn run(config: Config) -> Result<()> {
                                     continue;
                                 }
                             }
+                        }
+
+                        #[cfg(not(unix))]
+                        {
+                            peer_pid = None;
                         }
 
                         let client_state = shared_state.clone();

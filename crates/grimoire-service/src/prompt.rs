@@ -90,7 +90,7 @@ pub async fn prompt_password(method: &PromptMethod) -> Result<Option<Zeroizing<S
 /// Spawn `grimoire-prompt biometric` and return whether verification succeeded.
 pub async fn prompt_biometric(method: &PromptMethod, reason: &str) -> Result<bool> {
     if *method == PromptMethod::None || *method == PromptMethod::Terminal {
-        anyhow::bail!("Biometric not available with prompt method {:?}", method);
+        anyhow::bail!("Biometric not available with prompt method {method:?}");
     }
 
     let mut cmd = Command::new(prompt_binary());

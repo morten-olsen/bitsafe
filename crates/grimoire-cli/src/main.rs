@@ -110,7 +110,8 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let (request, handler): (Request, Box<dyn Fn(Response, bool) -> Result<()>>) = match cli.command
+    type ResponseHandler = Box<dyn Fn(Response, bool) -> Result<()>>;
+    let (request, handler): (Request, ResponseHandler) = match cli.command
     {
         Commands::Status => (
             Request::new(1, methods::AUTH_STATUS, None),

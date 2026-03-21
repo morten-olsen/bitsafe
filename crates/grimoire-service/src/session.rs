@@ -538,8 +538,7 @@ async fn resolve_single_ref(
     field: &str,
 ) -> Result<String, String> {
     // Determine if this is a name lookup (//) or ID lookup
-    let item_id = if ref_id.starts_with("//") {
-        let name = &ref_id[2..];
+    let item_id = if let Some(name) = ref_id.strip_prefix("//") {
         let matches: Vec<_> = items.iter().filter(|i| i.name == name).collect();
         match matches.len() {
             0 => return Err(format!("No item named '{name}'")),

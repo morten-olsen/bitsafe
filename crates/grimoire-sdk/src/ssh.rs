@@ -77,7 +77,7 @@ impl SshClient {
 /// Sign data with a parsed SSH private key, returning the signature in SSH wire format.
 ///
 /// SSH agent protocol flag constants
-const SSH_AGENT_RSA_SHA2_256: u32 = 2;
+const _SSH_AGENT_RSA_SHA2_256: u32 = 2;
 const SSH_AGENT_RSA_SHA2_512: u32 = 4;
 
 /// SSH wire format: u32_be(algo_len) + algo_name + u32_be(sig_len) + sig_bytes
@@ -119,8 +119,7 @@ fn sign_with_key(key: &ssh_key::PrivateKey, data: &[u8], flags: u32) -> Result<V
             }
         }
         other => Err(SdkError::Internal(format!(
-            "Unsupported SSH key type for signing: {:?}",
-            other
+            "Unsupported SSH key type for signing: {other:?}"
         ))),
     }
 }

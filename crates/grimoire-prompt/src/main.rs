@@ -4,7 +4,6 @@ use tracing_subscriber::EnvFilter;
 use zeroize::Zeroizing;
 
 mod backend;
-mod pin;
 
 #[derive(Parser)]
 #[command(name = "grimoire-prompt", about = "Grimoire interactive authentication agent")]
