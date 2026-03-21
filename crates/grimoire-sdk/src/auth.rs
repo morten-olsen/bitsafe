@@ -88,9 +88,24 @@ impl AuthClient {
     }
 
     /// Unlock: verify credentials and initialize crypto so vault operations work.
-    pub async fn unlock(&self, password: &str, login_state: &LoginState) -> Result<(), SdkError> {
+    pub async fn unlock(
+        &self,
+        password: &Zeroizing<String>,
+        login_state: &LoginState,
+    ) -> Result<(), SdkError> {
         self.auth_and_init_crypto(&login_state.email, password, &login_state.server_url)
             .await
+    }
+
+    /// Verify a master password against the server without reinitializing crypto.
+    /// Also refreshes the stored access token.
+    pub async fn verify_password(
+        &self,
+        email: &str,
+        password: &Zeroizing<String>,
+        server_url: &str,
+    ) -> Result<(), SdkError> {
+        self.verify_credentials(email, password, server_url).await
     }
 
     /// Steps 1-4 only: Prelogin, derive, token request, store token.
@@ -170,6 +185,9 @@ impl AuthClient {
             email: email.to_string(),
             account_cryptographic_state: WrappedAccountCryptographicState::V1 { private_key },
             method: InitUserCryptoMethod::MasterPasswordUnlock {
+                // The SDK takes a plain String here. We minimize the lifetime of
+                // this unzeroized copy — the SDK's ZeroizingAllocator handles it
+                // once ownership transfers to the SDK.
                 password: password.to_string(),
                 master_password_unlock: MasterPasswordUnlockData {
                     kdf,
@@ -193,17 +211,6 @@ impl AuthClient {
             })?;
 
         Ok(())
-    }
-
-    /// Verify a master password against the server without reinitializing crypto.
-    /// Also refreshes the stored access token.
-    pub async fn verify_password(
-        &self,
-        email: &str,
-        password: &str,
-        server_url: &str,
-    ) -> Result<(), SdkError> {
-        self.verify_credentials(email, password, server_url).await
     }
 
     pub async fn lock(&self) -> Result<(), SdkError> {
@@ -266,9 +273,20 @@ async fn prelogin(http: &reqwest::Client, server_url: &str, email: &str) -> Resu
             .map_err(|_| SdkError::Internal(format!("KDF {name} out of u32 range: {v}")))
     };
 
+    // Upper bounds prevent a malicious server from causing DoS via extreme KDF params.
+    let bounded_u32 = |v: i64, name: &str, max: u32| -> Result<u32, SdkError> {
+        let val = to_u32(v, name)?;
+        if val > max {
+            return Err(SdkError::Internal(format!(
+                "KDF {name} exceeds maximum ({val} > {max})"
+            )));
+        }
+        Ok(val)
+    };
+
     match kdf_type {
         0 => Ok(Kdf::PBKDF2 {
-            iterations: NonZeroU32::new(to_u32(iterations, "iterations")?)
+            iterations: NonZeroU32::new(bounded_u32(iterations, "iterations", 2_000_000)?)
                 .ok_or_else(|| SdkError::Internal("Zero KDF iterations".into()))?,
         }),
         1 => {
@@ -281,11 +299,11 @@ async fn prelogin(http: &reqwest::Client, server_url: &str, email: &str) -> Resu
                 .or_else(|| data["KdfParallelism"].as_i64())
                 .ok_or_else(|| SdkError::Internal("Missing Argon2 parallelism".into()))?;
             Ok(Kdf::Argon2id {
-                iterations: NonZeroU32::new(to_u32(iterations, "iterations")?)
+                iterations: NonZeroU32::new(bounded_u32(iterations, "iterations", 20)?)
                     .ok_or_else(|| SdkError::Internal("Zero iterations".into()))?,
-                memory: NonZeroU32::new(to_u32(memory, "memory")?)
+                memory: NonZeroU32::new(bounded_u32(memory, "memory", 4096)?)
                     .ok_or_else(|| SdkError::Internal("Zero memory".into()))?,
-                parallelism: NonZeroU32::new(to_u32(parallelism, "parallelism")?)
+                parallelism: NonZeroU32::new(bounded_u32(parallelism, "parallelism", 16)?)
                     .ok_or_else(|| SdkError::Internal("Zero parallelism".into()))?,
             })
         }
