@@ -76,9 +76,47 @@ enum Commands {
     /// Environment values matching "grimoire:<id>/<field>" are replaced with
     /// the actual secret from the vault before exec.
     Run {
+        /// Manifest file mapping env vars to vault references
+        #[arg(long)]
+        manifest: Vec<String>,
         /// Command and arguments to run
         #[arg(trailing_var_arg = true, required = true)]
         command: Vec<String>,
+    },
+    /// Generate a random password or passphrase
+    Generate {
+        /// Generation type: password or passphrase
+        #[arg(long, short = 'T', default_value = "password")]
+        r#type: String,
+        /// Password length (for type=password)
+        #[arg(long, short = 'l', default_value = "20")]
+        length: usize,
+        /// Character set: lowercase, uppercase, alpha, numeric, alphanumeric, symbols (combine with +)
+        #[arg(long, short = 'c', default_value = "alphanumeric+symbols")]
+        charset: String,
+        /// Number of words (for type=passphrase)
+        #[arg(long, short = 'w', default_value = "6")]
+        words: usize,
+        /// Word separator (for type=passphrase)
+        #[arg(long, short = 's', default_value = "-")]
+        separator: String,
+    },
+    /// Copy a vault secret to the clipboard with automatic clearing
+    Clip {
+        /// Item ID
+        id: String,
+        /// Field to copy (password, username, totp, uri, notes)
+        #[arg(long, short = 'f', default_value = "password")]
+        field: String,
+        /// Internal: background clear after timeout (hash of copied value)
+        #[arg(long, hide = true)]
+        clear_after: Option<String>,
+    },
+    /// Git credential helper (use with: git config credential.helper grimoire)
+    #[command(name = "credential-helper")]
+    CredentialHelper {
+        /// Action: get, store, or erase
+        action: String,
     },
     /// Install/manage the background service
     Service {
@@ -107,6 +145,18 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()))
         .init();
+
+    // Detect invocation as git-credential-grimoire (symlink/hardlink)
+    if let Some(arg0) = std::env::args().next() {
+        let basename = std::path::Path::new(&arg0)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        if basename == "git-credential-grimoire" {
+            let action = std::env::args().nth(1).unwrap_or_default();
+            return handle_credential_helper_action(&action).await;
+        }
+    }
 
     let cli = Cli::parse();
 
@@ -222,8 +272,33 @@ async fn main() -> Result<()> {
             Request::new(1, methods::AUTH_LOGOUT, None),
             Box::new(commands::handle_logout),
         ),
-        Commands::Run { command } => {
-            return handle_run(command).await;
+        Commands::Generate {
+            r#type,
+            length,
+            charset,
+            words,
+            separator,
+        } => {
+            return commands::generate::handle_generate(
+                &r#type, length, &charset, words, &separator, cli.json,
+            );
+        }
+        Commands::Clip {
+            id,
+            field,
+            clear_after,
+        } => {
+            // Hidden --clear-after: background clearer mode
+            if let Some(hash) = clear_after {
+                return commands::clipboard::run_clear_after(&hash);
+            }
+            return handle_clip(id, field, cli.json).await;
+        }
+        Commands::CredentialHelper { action } => {
+            return handle_credential_helper_action(&action).await;
+        }
+        Commands::Run { manifest, command } => {
+            return handle_run(manifest, command).await;
         }
         Commands::Service { action } => {
             return handle_service_action(action);
@@ -495,8 +570,210 @@ async fn send_request(request: Request) -> Result<Response> {
     Ok(response)
 }
 
+/// `grimoire clip <id>`: copy a secret to clipboard, auto-clear after timeout.
+async fn handle_clip(id: String, field: String, json: bool) -> Result<()> {
+    // Route TOTP to dedicated endpoint
+    let request = if field == "totp" {
+        Request::new(
+            1,
+            methods::VAULT_TOTP,
+            Some(RequestParams::VaultTotp(VaultTotpParams { id })),
+        )
+    } else {
+        Request::new(
+            1,
+            methods::VAULT_GET,
+            Some(RequestParams::VaultGet(VaultGetParams {
+                id,
+                field: Some(field.clone()),
+            })),
+        )
+    };
+
+    let mut response = send_request(request.clone()).await?;
+
+    // Auto-unlock via GUI prompt if vault is locked
+    if let Some(err) = &response.error {
+        match err.code {
+            error_codes::VAULT_LOCKED => {
+                eprintln!("Vault is locked. Requesting unlock...");
+                let unlock_resp = send_request(Request::new(
+                    1,
+                    methods::AUTH_UNLOCK,
+                    Some(RequestParams::Unlock(UnlockParams { password: None })),
+                ))
+                .await?;
+                commands::check_error(&unlock_resp)?;
+                eprintln!("Vault unlocked.");
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                response = send_request(request).await?;
+            }
+            error_codes::PROMPT_UNAVAILABLE => {
+                anyhow::bail!(
+                    "No GUI prompt available. Run `grimoire approve` first to \
+                     pre-approve access, then retry."
+                );
+            }
+            _ => {}
+        }
+    }
+
+    commands::check_error(&response)?;
+
+    // Extract the secret value — wrap in Zeroizing so it's cleared on drop
+    let secret = if field == "totp" {
+        let totp: grimoire_protocol::response::TotpResult =
+            serde_json::from_value(response.result.context("No result")?)?;
+        Zeroizing::new(totp.code)
+    } else {
+        let detail: grimoire_protocol::response::VaultItemDetail =
+            serde_json::from_value(response.result.context("No result")?)?;
+        let value = match field.as_str() {
+            "password" | "pw" => detail.password,
+            "username" | "user" => detail.username,
+            "uri" | "url" => detail.uri,
+            "notes" | "note" => detail.notes,
+            "name" => Some(detail.name),
+            _ => anyhow::bail!(
+                "Unknown field: {field}. Use: password, username, totp, uri, notes, name"
+            ),
+        };
+        Zeroizing::new(value.with_context(|| format!("Field '{field}' is empty for this item"))?)
+    };
+
+    commands::clipboard::copy_and_schedule_clear(&secret, json)?;
+    Ok(())
+}
+
+/// Handle git credential helper actions.
+async fn handle_credential_helper_action(action: &str) -> Result<()> {
+    match action {
+        "get" => handle_credential_get().await,
+        // store and erase are no-ops in v1 (read-only)
+        "store" | "erase" => Ok(()),
+        _ => {
+            anyhow::bail!(
+                "Unknown credential helper action: {action}. Expected: get, store, erase"
+            );
+        }
+    }
+}
+
+/// Handle `credential-helper get`: read git credential request from stdin, match vault items.
+async fn handle_credential_get() -> Result<()> {
+    use commands::credential_helper::{
+        match_vault_items, parse_credential_request, write_credential_response,
+    };
+
+    let stdin = std::io::stdin().lock();
+    let req = parse_credential_request(stdin)?;
+
+    // Only respond for HTTPS
+    if req.protocol.as_deref() != Some("https") {
+        return Ok(());
+    }
+
+    let Some(host) = &req.host else {
+        return Ok(());
+    };
+
+    // List all vault items to find URI matches
+    let list_request = Request::new(
+        1,
+        methods::VAULT_LIST,
+        Some(RequestParams::VaultList(VaultListParams {
+            r#type: Some("login".to_string()),
+            search: None,
+        })),
+    );
+
+    let mut response = send_request(list_request.clone()).await?;
+
+    // Auto-unlock if needed
+    if let Some(err) = &response.error {
+        match err.code {
+            error_codes::VAULT_LOCKED => {
+                eprintln!("Vault is locked. Requesting unlock...");
+                let unlock_resp = send_request(Request::new(
+                    1,
+                    methods::AUTH_UNLOCK,
+                    Some(RequestParams::Unlock(UnlockParams { password: None })),
+                ))
+                .await?;
+                commands::check_error(&unlock_resp)?;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                response = send_request(list_request).await?;
+            }
+            error_codes::PROMPT_UNAVAILABLE => {
+                anyhow::bail!("No GUI prompt available. Run `grimoire approve` first.");
+            }
+            _ => {}
+        }
+    }
+
+    commands::check_error(&response)?;
+
+    let items: Vec<grimoire_protocol::response::VaultItem> =
+        serde_json::from_value(response.result.context("No result")?)?;
+
+    // Filter by username hint if git provided one
+    let filtered_items: Vec<_> = if let Some(ref hint_username) = req.username {
+        items
+            .iter()
+            .filter(|i| i.username.as_deref() == Some(hint_username.as_str()))
+            .cloned()
+            .collect()
+    } else {
+        items
+    };
+
+    // Build (id, uri) pairs for matching
+    let item_pairs: Vec<(String, Option<String>)> = filtered_items
+        .iter()
+        .map(|i| (i.id.clone(), i.uri.clone()))
+        .collect();
+
+    let matched_id = match match_vault_items(host, req.path.as_deref(), &item_pairs) {
+        Ok(Some(id)) => id,
+        Ok(None) => return Ok(()), // No match — exit silently per git protocol
+        Err(e) => {
+            eprintln!("grimoire: {e}");
+            return Ok(()); // Ambiguous — error to stderr, exit with no output
+        }
+    };
+
+    // Get full item details
+    let get_request = Request::new(
+        1,
+        methods::VAULT_GET,
+        Some(RequestParams::VaultGet(VaultGetParams {
+            id: matched_id,
+            field: None,
+        })),
+    );
+    let get_response = send_request(get_request).await?;
+    commands::check_error(&get_response)?;
+
+    let mut detail: grimoire_protocol::response::VaultItemDetail =
+        serde_json::from_value(get_response.result.context("No result")?)?;
+
+    let username = detail.username.as_deref().unwrap_or("");
+    let password = detail.password.as_deref().unwrap_or("");
+
+    if !username.is_empty() || !password.is_empty() {
+        write_credential_response("https", host, username, password);
+    }
+
+    // Zeroize the password field before dropping
+    if let Some(ref mut pw) = detail.password {
+        zeroize::Zeroize::zeroize(pw);
+    }
+
+    Ok(())
+}
+
 /// `grimoire run -- <command>`: resolve vault references in env vars, then exec.
-async fn handle_run(command: Vec<String>) -> Result<()> {
+async fn handle_run(manifests: Vec<String>, command: Vec<String>) -> Result<()> {
     use grimoire_protocol::request::{ResolveRefsParams, VaultRef};
     use grimoire_protocol::response::ResolvedRef;
 
@@ -504,7 +781,13 @@ async fn handle_run(command: Vec<String>) -> Result<()> {
         anyhow::bail!("No command specified. Usage: grimoire run -- <command> [args...]");
     }
 
-    // Scan environment for grimoire: references
+    // Apply manifest files (earlier manifests first, later override)
+    for manifest_path in &manifests {
+        let entries = commands::manifest::parse_manifest(std::path::Path::new(manifest_path))?;
+        commands::manifest::apply_manifest_entries(&entries);
+    }
+
+    // Scan environment for grimoire: references (now includes manifest-injected vars)
     let mut refs_to_resolve: Vec<(String, VaultRef)> = Vec::new(); // (env_key, ref)
 
     for (key, value) in std::env::vars() {
@@ -576,11 +859,17 @@ async fn handle_run(command: Vec<String>) -> Result<()> {
             anyhow::bail!("Some vault references could not be resolved");
         }
 
-        // Replace environment variables with resolved values
+        // Replace environment variables with resolved values, then zeroize intermediates
         for (i, result) in resolved.iter().enumerate() {
             if let Some(value) = &result.value {
                 let (env_key, _) = &refs_to_resolve[i];
                 std::env::set_var(env_key, value);
+            }
+        }
+        // Zeroize secret values in the intermediate resolved vector
+        for mut result in resolved {
+            if let Some(ref mut value) = result.value {
+                zeroize::Zeroize::zeroize(value);
             }
         }
     }

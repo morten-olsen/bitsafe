@@ -14,6 +14,8 @@ pub const SESSION_DURATION_SECONDS: u64 = 300;
 pub const PIN_MAX_ATTEMPTS: u32 = 3;
 /// How long an approval grant lasts, in seconds.
 pub const APPROVAL_SECONDS: u64 = 300;
+/// Clipboard auto-clear timeout in seconds. Not configurable.
+pub const CLIPBOARD_CLEAR_SECONDS: u64 = 15;
 
 /// Config file structure. Only operational settings are configurable —
 /// security parameters are hardcoded constants.

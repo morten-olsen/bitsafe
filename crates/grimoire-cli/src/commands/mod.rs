@@ -1,6 +1,11 @@
 use anyhow::{bail, Context, Result};
 use grimoire_protocol::response::{Response, StatusResult, TotpResult, VaultItem, VaultItemDetail};
 
+pub mod clipboard;
+pub mod credential_helper;
+pub mod generate;
+pub mod manifest;
+
 /// Extract the result payload from a successful response.
 fn result_value(response: Response) -> Result<serde_json::Value> {
     response
