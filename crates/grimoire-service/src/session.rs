@@ -324,6 +324,10 @@ async fn handle_unlock(
 
 async fn handle_lock(id: Option<u64>, state: &SharedState) -> Response {
     let mut s = state.write().await;
+    if s.vault_state != VaultState::Unlocked {
+        // Already locked (or logged out) — treat as success (idempotent).
+        return success_result(id, OkResult { ok: true });
+    }
     match s.lock().await {
         Ok(()) => success_result(id, OkResult { ok: true }),
         Err(e) => Response::error(id, sdk_err_to_rpc(e)),
