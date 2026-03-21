@@ -431,14 +431,21 @@ mod tests {
 
     // --- Backoff tests ---
 
+    /// Clear persisted backoff state so tests start clean.
+    fn clear_test_backoff() {
+        grimoire_sdk::persist::clear_backoff();
+    }
+
     #[tokio::test]
     async fn backoff_zero_on_first_attempt() {
+        clear_test_backoff();
         let state = ServiceState::new(PromptMethod::None).await;
         assert_eq!(state.master_password_backoff_remaining(), 0);
     }
 
     #[tokio::test]
     async fn backoff_zero_after_one_failure() {
+        clear_test_backoff();
         let mut state = ServiceState::new(PromptMethod::None).await;
         state.record_password_failure(); // attempt 1
         assert_eq!(state.master_password_backoff_remaining(), 0);
@@ -446,6 +453,7 @@ mod tests {
 
     #[tokio::test]
     async fn backoff_positive_after_two_failures() {
+        clear_test_backoff();
         let mut state = ServiceState::new(PromptMethod::None).await;
         state.record_password_failure(); // attempt 1
         state.record_password_failure(); // attempt 2
@@ -455,6 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn backoff_resets_on_success() {
+        clear_test_backoff();
         let mut state = ServiceState::new(PromptMethod::None).await;
         state.record_password_failure();
         state.record_password_failure();
