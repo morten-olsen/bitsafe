@@ -2,9 +2,48 @@
 
 Grimoire runs on Linux and macOS, with experimental support for Android via Termux. This guide covers every way to get it running.
 
-## From Prebuilt Binaries (Recommended)
+## Install Script (Recommended)
+
+The quickest way to install — detects your platform, downloads the release, and verifies checksums:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/morten-olsen/grimoire/main/contrib/install.sh | sh
+```
+
+Installs to `~/.local/bin` by default. Options:
+
+```bash
+# Specific version
+curl -fsSL ... | sh -s -- --version v0.2.0
+
+# Custom prefix
+curl -fsSL ... | sh -s -- --prefix /usr/local
+```
+
+## Homebrew (macOS / Linux)
+
+```bash
+brew tap morten-olsen/tap
+brew install grimoire
+```
+
+## Nix
+
+```bash
+# Standalone install
+nix profile install github:morten-olsen/grimoire
+
+# Or in a flake
+inputs.grimoire.url = "github:morten-olsen/grimoire";
+```
+
+A NixOS module is available — see [CI & Release](release.md) for details.
+
+## From Prebuilt Binaries (Manual)
 
 Download the latest release for your platform from [GitHub Releases](../../releases).
+
+Each release is signed — see [Verifying Release Artifacts](release.md#verifying-release-artifacts) for checksum and cosign verification instructions.
 
 Each release archive contains:
 - `grimoire` — the CLI client
