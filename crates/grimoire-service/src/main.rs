@@ -73,9 +73,6 @@ fn harden_memory() -> Result<()> {
         }
     }
 
-    tracing::info!(
-        platform = std::env::consts::OS,
-        "Memory hardening applied"
-    );
+    tracing::info!(platform = std::env::consts::OS, "Memory hardening applied");
     Ok(())
 }
