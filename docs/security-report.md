@@ -26,12 +26,36 @@ Since the last audit (2026-03-20), significant improvements have been made:
 - `grimoire authorize` command for headless sessions
 - CI release pipeline with cosign signing
 
-This audit identifies **2 critical findings**, **5 high-severity findings**, and **10 medium-severity findings**. The most impactful issues are:
+This audit identified **2 critical findings**, **5 high-severity findings**, and **10 medium-severity findings**. All immediate and short-term findings have been addressed (see Post-Audit Fixes below). The remaining open findings are medium-term items.
 
-1. **SSH private key material not zeroized** — Ed25519/RSA private keys persist on the heap after signing
-2. **No connection limits or timeouts** — the service remains vulnerable to resource exhaustion
-3. **Password crosses to plain `String` at the SDK boundary** — breaks the zeroization chain for the most sensitive credential
-4. **Backoff counter resets on service restart** — enabling unlimited password guessing with periodic restarts
+### Post-Audit Fixes (2026-03-21)
+
+All immediate and short-term findings from this audit have been fixed:
+
+| Finding | Status | Commit |
+|---------|--------|--------|
+| **C1** SSH key zeroization | **Fixed** — Ed25519 raw bytes zeroized; `PrivateKey`/`SigningKey` types lack `Zeroize` impl (documented as residual gap) | `security(ssh): zeroize SSH private key material after signing` |
+| **C2** PATH prompt binary | **Fixed** — PATH fallback removed entirely, only adjacent to `current_exe()` | `security(service): remove PATH fallback for prompt binary discovery` |
+| **H1** Password SDK boundary | **Mitigated** — `Zeroizing<String>` passed through to SDK; SDK requires plain `String` for `InitUserCryptoRequest` (documented gap) | `security(sdk): pass Zeroizing<String> through SDK boundary and bound KDF params` |
+| **H2** Connection limits | **Fixed** — 64 max connections, 10s handshake timeout, 60s idle timeout | `security(ipc): add connection limits, timeouts, and reduce message size` |
+| **H3** Backoff persistence | **Fixed** — persisted to `backoff.json` | `security(auth): persist password backoff counter across restarts` |
+| **H4** Memory hardening | **Fixed** — all hardening failures fatal, no escape hatch; macOS `PT_DENY_ATTACH` added | `security(service): make memory hardening fatal, add macOS PT_DENY_ATTACH` |
+| **H5** KDF parameter bounds | **Fixed** — PBKDF2 max 2M iter, Argon2 max 4096 MiB / 16 threads / 20 iter | `security(sdk): pass Zeroizing<String> through SDK boundary and bound KDF params` |
+| **M5** SSH agent UID check | **Fixed** — UID peer verification in `new_session()` | `security(ssh): add UID peer verification to SSH agent socket` |
+| **M7** Message size limit | **Fixed** — reduced from 16 MiB to 1 MiB | `security(ipc): add connection limits, timeouts, and reduce message size` |
+| **M8** cargo-audit in CI | **Fixed** — runs on every push/PR; RUSTSEC-2023-0071 and RUSTSEC-2026-0049 ignored (unfixable SDK transitive deps) | `security(ci): add cargo-audit to CI pipeline` |
+| **M10** Config permissions | **Fixed** — refuses to start with group/world-writable config, no fallback | `security(common): reject world/group-writable config file` |
+
+### Remaining open findings (medium-term)
+
+| Finding | Summary |
+|---------|---------|
+| **M1** | Sync worker holds read lock during HTTP call |
+| **M2** | `login.json` has no integrity protection (HMAC) |
+| **M3** | `/proc/<pid>/stat` TOCTOU in session leader resolution |
+| **M4** | Error messages leak vault item names/counts |
+| **M6** | `tokio` uses `features = ["full"]` |
+| **M9** | CI actions not pinned to commit SHAs |
 
 ---
 

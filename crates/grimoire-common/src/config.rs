@@ -98,37 +98,36 @@ pub fn parse_config(toml_str: &str) -> Result<Config, toml::de::Error> {
 
 /// Load config from the default path, returning defaults if the file doesn't exist.
 ///
-/// Warns if the config file is group/world-writable — an attacker who can modify
+/// Refuses to load a group/world-writable config file — an attacker who can modify
 /// the config can redirect `server.url` to capture the master password hash.
-pub fn load_config() -> Config {
+pub fn load_config() -> Result<Config, String> {
     let Some(path) = config_path() else {
-        return Config::default();
+        return Ok(Config::default());
     };
 
-    // Check permissions before reading — world/group-writable config is a security risk.
+    // Reject group/world-writable config — no compromises on security.
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         if let Ok(meta) = std::fs::metadata(&path) {
             let mode = meta.mode();
             if mode & 0o022 != 0 {
-                tracing::warn!(
-                    path = %path.display(),
-                    mode = format!("{mode:04o}"),
-                    "Config file is group/world-writable — this is a security risk. \
-                     Fix with: chmod 600 {}",
+                return Err(format!(
+                    "Config file {} has insecure permissions ({:04o}). \
+                     Refusing to start — fix with: chmod 600 {}",
                     path.display(),
-                );
+                    mode & 0o777,
+                    path.display(),
+                ));
             }
         }
     }
 
     match std::fs::read_to_string(&path) {
-        Ok(contents) => toml::from_str(&contents).unwrap_or_else(|e| {
-            tracing::warn!("Failed to parse config at {}: {e}", path.display());
-            Config::default()
-        }),
-        Err(_) => Config::default(),
+        Ok(contents) => toml::from_str(&contents)
+            .map_err(|e| format!("Failed to parse config at {}: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
+        Err(e) => Err(format!("Failed to read config at {}: {e}", path.display())),
     }
 }
 

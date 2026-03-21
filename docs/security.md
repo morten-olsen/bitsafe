@@ -21,10 +21,8 @@ We do **not** currently defend against:
 
 ### What's implemented
 
-- `mlockall(MCL_CURRENT | MCL_FUTURE)` at service startup — prevents pages from being swapped to disk
-- `prctl(PR_SET_DUMPABLE, 0)` — prevents core dumps and ptrace from non-root
-- Both are **Linux-only** (`#[cfg(target_os = "linux")]` in `grimoire-service/src/main.rs`)
-- Both **log a warning and continue** if they fail (e.g. memlock rlimit exhausted)
+- **Linux**: `mlockall(MCL_CURRENT | MCL_FUTURE)` at service startup — prevents pages from being swapped to disk. `prctl(PR_SET_DUMPABLE, 0)` — prevents core dumps and ptrace from non-root. Both are **fatal on failure** — the service refuses to start without memory protection.
+- **macOS**: `ptrace(PT_DENY_ATTACH)` — prevents debugger attachment (same mechanism used by Apple's security daemon). Fatal on failure.
 
 ### What's delegated to the SDK
 
@@ -36,20 +34,25 @@ We do **not** currently defend against:
 All password and PIN fields use `zeroize::Zeroizing<String>` — memory is zeroed on drop. This covers:
 - `LoginParams.password` and `UnlockParams.password` in protocol types
 - `LoginCredentials.password` in the SDK wrapper
-- `Session.pin` held in service state
+- `Session.pin` held in service state (`Option<Zeroizing<String>>`)
 - `SetPinParams.pin` in protocol types
 - `PromptResponse.credential` from prompt subprocess
 - Local variables from `rpassword::prompt_password()` in the CLI
+- `ServiceState.unlock()` and `verify_password()` accept `&Zeroizing<String>`
+- `AuthClient.unlock()` and `verify_password()` accept `&Zeroizing<String>`
+- SSH Ed25519 raw key bytes zeroized after signing (`ssh.rs`)
 
 The SDK uses `ZeroizingAllocator` internally for key material. Between Grimoire's zeroization of passwords and the SDK's zeroization of keys, the sensitive-data lifecycle is covered.
 
 ### Known gaps
 
-- **No macOS memory hardening.** `mlockall` and `PR_SET_DUMPABLE` have no macOS equivalents in the current code. macOS processes may swap sensitive pages.
+- **No macOS swap protection.** macOS has no `mlockall` equivalent. `PT_DENY_ATTACH` prevents debugger attachment but does not prevent pages from being swapped to disk. macOS processes may swap sensitive pages.
+- **SSH private key zeroization is partial.** Ed25519 raw key bytes are zeroized after signing, but `ssh_key::PrivateKey` and `ed25519_dalek::SigningKey` do not implement `Zeroize` in their current versions. The `rsa::RsaPrivateKey` is consumed by the signing key constructor (not leaked). See `grimoire-sdk/src/ssh.rs`.
+- **Password `String` copy at SDK boundary.** `unlock()` and `verify_password()` accept `&Zeroizing<String>`, but the SDK's `InitUserCryptoRequest` requires a plain `String`. The copy is documented and minimized but not zeroized by us — the SDK's `ZeroizingAllocator` handles it.
 
 ### Future improvements
 
-- Investigate macOS `mlock` support (per-page, not process-wide)
+- Investigate macOS `mlock` per-page support for key material
 - Consider `seccomp` filtering on Linux to restrict syscalls
 
 ## IPC Security
@@ -62,8 +65,8 @@ The SDK uses `ZeroizingAllocator` internally for key material. Between Grimoire'
 
 ### Peer credential validation
 
-- **Linux**: `SO_PEERCRED` check on every connection — peer UID must match service UID. Connections from other users are rejected.
-- **macOS**: `getpeereid()` check (via tokio's `peer_cred()`) — same UID validation as Linux.
+- **Main socket (Linux/macOS)**: `SO_PEERCRED` / `getpeereid()` check on every connection — peer UID must match service UID. Connections from other users are rejected.
+- **SSH agent socket**: Same UID peer verification inside `SshAgentHandler::new_session()`. Rejected sessions return empty identities and refuse signing.
 
 ### Encrypted IPC
 
@@ -72,6 +75,13 @@ The SDK uses `ZeroizingAllocator` internally for key material. Between Grimoire'
 - Ephemeral keypairs generated per connection — no key reuse across sessions
 - Nonce counter prevents replay within a connection
 - Socket permissions (`0600` + UID check) remain the primary trust boundary; encryption provides defense-in-depth against local eavesdropping or socket path attacks
+
+### Connection limits and timeouts
+
+- **Max 64 concurrent connections** — enforced by a `tokio::sync::Semaphore`. Excess connections are rejected immediately.
+- **10-second handshake timeout** — the X25519 key exchange must complete within 10 seconds or the connection is dropped.
+- **60-second idle timeout** — clients that don't send a message within 60 seconds are disconnected.
+- **1 MiB message size limit** — prevents memory exhaustion from oversized payloads.
 
 ### Known gaps
 
@@ -84,13 +94,13 @@ The SDK uses `ZeroizingAllocator` internally for key material. Between Grimoire'
 - Exponential backoff on failed login/unlock: 0s, 1s, 2s, 4s, 8s, 16s, 30s (capped)
 - Enforced server-side — the service rejects attempts before the backoff window expires (error code 1009)
 - Counter resets on successful authentication
-- **Not persisted to disk** — service restart resets the counter
+- **Persisted to disk** (`~/.local/share/grimoire/backoff.json`, mode `0600`) — service restart does not reset the counter. Prevents restart-based brute force bypass.
 
 ### PIN
 
 - 3 attempts, no delay between them
 - After 3 failures: vault locks automatically (keys scrubbed, need master password)
-- PIN stored as `Option<String>` in service memory, never on disk
+- PIN stored as `Option<Zeroizing<String>>` in service memory, never on disk
 - Constant-time comparison via XOR fold — **leaks length** due to early return on length mismatch. Acceptable for short PINs (4-6 digits).
 
 ### Session re-verification
@@ -104,9 +114,9 @@ The SDK uses `ZeroizingAllocator` internally for key material. Between Grimoire'
 
 ### Binary discovery
 
-- Service looks for `grimoire-prompt` next to its own binary (`current_exe()`), then falls back to `PATH`
-- **PATH fallback is a risk** — an attacker who can place a binary earlier in PATH could intercept password prompts
-- Mitigation: install both binaries in the same directory
+- Service looks for `grimoire-prompt-{platform}` then `grimoire-prompt` **only adjacent to `current_exe()`**
+- **No PATH fallback** — if the prompt binary is not found next to the service, the service returns a clear error. This prevents PATH-based interception of master passwords.
+- Install both binaries in the same directory
 
 ### Platform-specific concerns
 
@@ -182,7 +192,7 @@ After successful login, the service saves encrypted credentials to `~/.local/sha
 
 - Security parameters (auto-lock timeout, approval duration, PIN max attempts, approval scope, approval requirement) are **hardcoded constants** — not configurable via config file. This prevents config-based downgrade attacks.
 - Only operational settings are configurable: server URL, prompt method (auto/gui/terminal/none), SSH agent enabled/disabled.
-- Config file at `~/.config/grimoire/config.toml` — file permissions are not verified by the service (acceptable since the file contains no security-critical settings).
+- Config file at `~/.config/grimoire/config.toml` — **refuses to start if group/world-writable** (`mode & 0o022`). While security parameters are hardcoded, `server.url` is security-relevant (malicious URL redirects password hash). No fallback, no override.
 - Config is loaded once at startup — runtime changes require restart.
 
 ## Dependency Security
@@ -194,12 +204,23 @@ After successful login, the service saves encrypted credentials to `~/.local/sha
 - Transitive deps must be manually pinned after updates (see `UPGRADING.md`)
 - **`digest 0.11.1` is yanked on crates.io** but required for compatibility
 
+### Known advisories in transitive dependencies
+
+- **RUSTSEC-2023-0071** (rsa 0.9.x and 0.10.0-rc.x) — Marvin Attack timing sidechannel. No fixed version available. Pulled in transitively by the SDK via `bitwarden-crypto` and `ssh-key`. Our RSA usage is SSH signing over a local Unix socket where the timing attack is not exploitable. Ignored in `cargo audit`.
+- **RUSTSEC-2026-0049** (rustls-webpki 0.103.x) — CRL Distribution Point matching logic bug. No fixed version available. Transitive dep from the SDK's `reqwest` chain. Ignored in `cargo audit`.
+- **Yanked crates**: `digest 0.11.1` and `crypto-bigint 0.7.1` are yanked but required by the SDK's pre-release RustCrypto stack. Builds work from the committed `Cargo.lock`; a clean `cargo update` would fail to resolve these.
+
+### CI security scanning
+
+- `cargo audit` runs on every push/PR with explicit `--ignore` flags for the unfixable advisories above
+- All advisories are re-evaluated on each SDK revision bump
+
 ### Other notable dependencies
 
 - `rpassword` — terminal password input, well-maintained
-- `tokio` — async runtime, full features enabled
+- `tokio` — async runtime, `features = ["full"]` (narrowing to explicit features is a medium-term goal)
 - `serde_json` — JSON parsing, no known vulnerabilities
-- `libc` — FFI for mlockall/prctl, Linux-only
+- `libc` — FFI for mlockall/prctl/ptrace/getuid/getsid, Unix only
 
 ## Release Pipeline & Supply Chain
 
@@ -233,10 +254,24 @@ After successful login, the service saves encrypted credentials to `~/.local/sha
 | ~~High~~ | ~~macOS Swift string injection~~ | **Fixed** — `escape_swift()` and `escape_applescript()` sanitize all interpolated strings |
 | ~~High~~ | ~~No macOS peer credential check~~ | **Fixed** — UID check now uses `#[cfg(unix)]` (tokio's `peer_cred()` works on both Linux and macOS) |
 | ~~Medium~~ | ~~Socket fallback path uses PID not UID~~ | **Fixed** — uses `libc::getuid()` on Unix |
-| Medium | Prompt binary PATH fallback | Open — restrict to absolute path or same-directory-as-service only |
-| Medium | Backoff counter resets on service restart | Open — consider persisting attempt count |
+| ~~Medium~~ | ~~Prompt binary PATH fallback~~ | **Fixed** — PATH fallback removed, only checks adjacent to `current_exe()` |
+| ~~Medium~~ | ~~Backoff counter resets on service restart~~ | **Fixed** — persisted to `backoff.json` |
 | ~~Medium~~ | ~~Inactivity timer not reset on vault ops~~ | **Fixed** — `touch()` called in `dispatch()` for every session-guarded operation |
+| ~~Medium~~ | ~~No connection limits or timeouts~~ | **Fixed** — 64 max connections, 10s handshake timeout, 60s idle timeout, 1 MiB message limit |
+| ~~Medium~~ | ~~mlockall failure is non-fatal~~ | **Fixed** — all memory hardening failures are fatal, no fallback |
+| ~~Medium~~ | ~~SSH agent socket lacks UID check~~ | **Fixed** — UID peer verification added in `SshAgentHandler::new_session()` |
+| ~~Medium~~ | ~~No cargo audit in CI~~ | **Fixed** — `cargo audit` runs on every push/PR |
+| ~~Low~~ | ~~Config file permissions not checked~~ | **Fixed** — refuses to start with group/world-writable config |
+| ~~Low~~ | ~~KDF parameters unbounded from server~~ | **Fixed** — PBKDF2 max 2M iter, Argon2 max 4096 MiB / 16 threads |
+| Medium | Password `String` copy at SDK boundary | Mitigated — `Zeroizing<String>` passed to SDK boundary, but SDK requires plain `String` internally |
+| Medium | SSH key zeroization partial | Mitigated — Ed25519 raw bytes zeroized, but `PrivateKey`/`SigningKey` types lack `Zeroize` impl |
 | Medium | `UserKeyState` holds decrypted key in plain HashMap | Open — SDK-managed state, needs upstream zeroizing container |
-| Low | Config file permissions not checked | Open — warn if config is world-readable |
+| Medium | No macOS swap protection | Open — `PT_DENY_ATTACH` prevents debugger but no `mlockall` equivalent |
+| Medium | Sync holds read lock during HTTP call | Open — blocks state mutations during server requests |
+| Medium | `login.json` has no integrity protection | Open — same-user attacker can redirect `server_url` |
+| Medium | CI actions not pinned to commit SHAs | Open — tag-based references are a supply chain risk |
+| Medium | `tokio` uses `features = ["full"]` | Open — wider attack surface than needed |
 | Low | PIN length leaked via timing | Accepted — acceptable for 4-6 digit PINs per design decision |
-| Low | mlockall failure is non-fatal | Open — consider failing hard if memory hardening is configured as required |
+| Low | Error messages leak vault item names/counts | Open — `resolve_single_ref` includes names in errors |
+| Low | RUSTSEC-2023-0071 (RSA Marvin Attack) | Accepted — SDK transitive dep, no fix available, not exploitable over local socket |
+| Low | RUSTSEC-2026-0049 (rustls-webpki CRL) | Accepted — SDK transitive dep, no fix available |

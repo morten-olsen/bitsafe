@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
 
     harden_memory()?;
 
-    let config = grimoire_common::config::load_config();
+    let config = grimoire_common::config::load_config().map_err(|e| anyhow::anyhow!("{e}"))?;
     tracing::info!(
         server_url = %config.server.url,
         auto_lock = grimoire_common::config::AUTO_LOCK_SECONDS,
