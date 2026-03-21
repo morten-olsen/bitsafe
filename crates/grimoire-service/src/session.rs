@@ -359,8 +359,9 @@ async fn handle_set_pin(
 }
 
 /// Authorize by verifying the master password. Intended for SSH/headless sessions
-/// where the GUI prompt agent is unavailable. Verifies the password against the
-/// server, then refreshes the session timer and grants scoped access approval.
+/// where the GUI prompt agent is unavailable. If the vault is locked, unlocks it
+/// first using the provided password. Then grants scoped access approval.
+/// No GUI involvement — the password must always be provided in the request.
 async fn handle_authorize(
     id: Option<u64>,
     params: &Option<RequestParams>,
@@ -375,11 +376,11 @@ async fn handle_authorize(
         }
     };
 
-    // Must be unlocked
+    // Must be logged in
     {
         let s = state.read().await;
-        if s.vault_state != VaultState::Unlocked {
-            return Response::error(id, RpcError::vault_locked());
+        if s.vault_state == VaultState::LoggedOut {
+            return Response::error(id, RpcError::not_logged_in());
         }
 
         // Enforce master password backoff
@@ -395,31 +396,54 @@ async fn handle_authorize(
         }
     }
 
-    // Verify against the server
-    let result = {
-        let s = state.read().await;
-        s.verify_password(&password).await
-    };
-
-    match result {
-        Ok(()) => {
-            let mut s = state.write().await;
-            s.reset_password_attempts();
-
-            // Grant scoped access approval
-            let scope_key = resolve_scope_key(peer_pid);
-            let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
-            s.approval_cache.grant(scope_key, duration);
-
-            tracing::info!(scope_key, "Authorized via master password");
-            success_result(id, OkResult { ok: true })
+    // If vault is locked, unlock it first using the provided password.
+    // This is the whole point of `grimoire approve` — a single headless
+    // operation that handles both unlock and approval without any GUI.
+    let needs_unlock = state.read().await.vault_state == VaultState::Locked;
+    if needs_unlock {
+        let mut s = state.write().await;
+        match s.unlock(&password).await {
+            Ok(()) => {
+                s.reset_password_attempts();
+                drop(s);
+                // Sync in the background so vault data is ready
+                let sync_state = state.clone();
+                tokio::spawn(async move {
+                    crate::sync_worker::sync_now(&sync_state).await;
+                });
+            }
+            Err(SdkError::AuthFailed(msg)) => {
+                s.record_password_failure();
+                return Response::error(id, RpcError::auth_failed(msg));
+            }
+            Err(e) => return Response::error(id, sdk_err_to_rpc(e)),
         }
-        Err(SdkError::AuthFailed(msg)) => {
-            state.write().await.record_password_failure();
-            Response::error(id, RpcError::auth_failed(msg))
+    } else {
+        // Already unlocked — just verify the password against the server
+        let result = {
+            let s = state.read().await;
+            s.verify_password(&password).await
+        };
+        match result {
+            Ok(()) => {
+                state.write().await.reset_password_attempts();
+            }
+            Err(SdkError::AuthFailed(msg)) => {
+                state.write().await.record_password_failure();
+                return Response::error(id, RpcError::auth_failed(msg));
+            }
+            Err(e) => return Response::error(id, sdk_err_to_rpc(e)),
         }
-        Err(e) => Response::error(id, sdk_err_to_rpc(e)),
     }
+
+    // Grant scoped access approval
+    let mut s = state.write().await;
+    let scope_key = resolve_scope_key(peer_pid);
+    let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
+    s.approval_cache.grant(scope_key, duration);
+
+    tracing::info!(scope_key, "Authorized via master password");
+    success_result(id, OkResult { ok: true })
 }
 
 async fn handle_vault_list(
