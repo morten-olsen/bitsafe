@@ -14,9 +14,13 @@ pub struct PromptResponse {
     pub message: Option<String>,
 }
 
-/// Find the best available prompt binary.
-/// Prefers the platform-native binary, falls back to the generic one.
-fn prompt_binary() -> String {
+/// Find the prompt binary adjacent to the service executable.
+///
+/// SECURITY: Only checks next to `current_exe()`. Never falls back to PATH
+/// lookup — a malicious binary earlier in $PATH could intercept master
+/// passwords or bypass biometric approval. If not found, returns an error
+/// so the caller can surface a clear message.
+fn prompt_binary() -> Result<String> {
     // Platform-native binary name
     #[cfg(target_os = "macos")]
     let native_name = "grimoire-prompt-macos";
@@ -25,35 +29,30 @@ fn prompt_binary() -> String {
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let native_name = "";
 
-    if let Ok(mut path) = std::env::current_exe() {
-        // Check for native binary next to service
-        if !native_name.is_empty() {
-            path.set_file_name(native_name);
-            if path.exists() {
-                return path.to_string_lossy().into_owned();
-            }
-        }
-        // Check for generic binary next to service
-        path.set_file_name("grimoire-prompt");
-        if path.exists() {
-            return path.to_string_lossy().into_owned();
-        }
-    }
+    let mut path = std::env::current_exe().context("Cannot determine service executable path")?;
 
-    // Check PATH for native binary
+    // Check for native binary next to service
     if !native_name.is_empty() {
-        if let Ok(output) = std::process::Command::new("which")
-            .arg(native_name)
-            .output()
-        {
-            if output.status.success() {
-                return native_name.into();
-            }
+        path.set_file_name(native_name);
+        if path.exists() {
+            return Ok(path.to_string_lossy().into_owned());
         }
     }
 
-    // Fall back to generic
-    "grimoire-prompt".into()
+    // Check for generic binary next to service
+    path.set_file_name("grimoire-prompt");
+    if path.exists() {
+        return Ok(path.to_string_lossy().into_owned());
+    }
+
+    anyhow::bail!(
+        "No prompt binary found next to service executable ({}). \
+         Install grimoire-prompt or grimoire-prompt-{} alongside the service binary.",
+        std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "<unknown>".into()),
+        std::env::consts::OS,
+    )
 }
 
 /// Spawn `grimoire-prompt password` and return the master password.
@@ -62,7 +61,7 @@ pub async fn prompt_password(method: &PromptMethod) -> Result<Option<Zeroizing<S
         anyhow::bail!("Interactive prompting is disabled (prompt.method = \"none\")");
     }
 
-    let mut cmd = Command::new(prompt_binary());
+    let mut cmd = Command::new(prompt_binary()?);
     cmd.arg("password");
 
     // If method is terminal, set an env hint for the prompt agent
@@ -99,7 +98,7 @@ pub async fn prompt_biometric(method: &PromptMethod, reason: &str) -> Result<boo
         anyhow::bail!("Biometric not available with prompt method {method:?}");
     }
 
-    let mut cmd = Command::new(prompt_binary());
+    let mut cmd = Command::new(prompt_binary()?);
     cmd.args(["biometric", "--reason", reason]);
     cmd.stdout(Stdio::piped()).stderr(Stdio::inherit());
     let output = cmd
@@ -135,7 +134,7 @@ pub async fn prompt_pin(
         anyhow::bail!("Interactive prompting is disabled");
     }
 
-    let mut cmd = Command::new(prompt_binary());
+    let mut cmd = Command::new(prompt_binary()?);
     cmd.args([
         "pin",
         "--attempt",
