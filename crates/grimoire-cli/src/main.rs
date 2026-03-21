@@ -508,7 +508,6 @@ async fn send_request(request: Request) -> Result<Response> {
 async fn handle_run(command: Vec<String>) -> Result<()> {
     use grimoire_protocol::request::{ResolveRefsParams, VaultRef};
     use grimoire_protocol::response::ResolvedRef;
-    use std::ffi::CString;
 
     if command.is_empty() {
         anyhow::bail!("No command specified. Usage: grimoire run -- <command> [args...]");

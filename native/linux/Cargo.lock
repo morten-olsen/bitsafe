@@ -65,17 +65,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
-name = "bitsafe-prompt-linux"
-version = "0.1.0"
-dependencies = [
- "clap",
- "gtk4",
- "libadwaita",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "cairo-rs"
 version = "0.20.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -395,6 +384,17 @@ dependencies = [
  "libc",
  "pkg-config",
  "system-deps",
+]
+
+[[package]]
+name = "grimoire-prompt-linux"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "gtk4",
+ "libadwaita",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
