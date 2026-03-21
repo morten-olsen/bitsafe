@@ -269,14 +269,9 @@ async fn handle_unlock(
         }
     }
 
-    // Track whether password was provided directly (not via GUI prompt).
-    // Direct password entry proves identity, so we also grant access approval.
-    let password_direct = matches!(
-        params,
-        Some(RequestParams::Unlock(UnlockParams { password: Some(_) }))
-    );
-
-    // Get password — either from params or by spawning the prompt agent
+    // Get password — either from params or by spawning the prompt agent.
+    // Either way, the user proves identity by entering the master password,
+    // so we grant access approval on successful unlock.
     let password = match params {
         Some(RequestParams::Unlock(UnlockParams { password: Some(pw) })) => pw.clone(),
         _ => {
@@ -302,14 +297,12 @@ async fn handle_unlock(
         Ok(()) => {
             s.reset_password_attempts();
 
-            // When the password was provided directly (CLI/SSH), also grant
-            // access approval — the user already proved identity.
-            if password_direct {
-                let scope_key = resolve_scope_key(peer_pid);
-                let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
-                s.approval_cache.grant(scope_key, duration);
-                tracing::info!(scope_key, "Access approved on unlock (direct password)");
-            }
+            // Unlock always grants access approval — the user proved identity
+            // by entering the correct master password (whether via CLI or GUI).
+            let scope_key = resolve_scope_key(peer_pid);
+            let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
+            s.approval_cache.grant(scope_key, duration);
+            tracing::info!(scope_key, "Access approved on unlock");
 
             drop(s); // Release write lock before sync
 

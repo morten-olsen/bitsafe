@@ -80,7 +80,7 @@ ssh -T git@github.com   # Test signing
 ### Prerequisites
 
 - The vault must be **unlocked** — if locked, the agent returns an empty key list and signing is impossible
-- The caller must have **access approval** — either pre-authorized via `grimoire authorize`, granted by a GUI prompt, or approval disabled in config
+- The caller must have **access approval** — either pre-approved via `grimoire approve`, granted by a GUI prompt, or approval disabled in config
 
 ## Access Approval
 
@@ -111,14 +111,14 @@ Subsequent signing requests within the approval window proceed silently.
 
 ### Headless / SSH sessions (no GUI)
 
-Pre-authorize before using SSH keys:
+Pre-approve access before using SSH keys:
 
 ```sh
-grimoire authorize      # prompts for master password in terminal
+grimoire approve       # prompts for master password in terminal
 ssh git@github.com     # signing works — approval is cached
 ```
 
-The `authorize` command grants approval scoped to your terminal session. Any SSH command from the same terminal session will be approved until `approval_seconds` expires (default: 300s / 5 minutes).
+The `approve` command grants approval scoped to your terminal session. Any SSH command from the same terminal session will be approved until `approval_seconds` expires (default: 300s / 5 minutes).
 
 Unlocking the vault with a direct password also grants approval:
 
@@ -129,10 +129,10 @@ ssh git@github.com          # already approved from the unlock
 
 ### Headless / CI environments
 
-Access approval cannot be disabled. In headless environments, use `grimoire authorize` to pre-approve access for the terminal session:
+Access approval cannot be disabled. In headless environments, use `grimoire approve` to pre-approve access for the terminal session:
 
 ```bash
-grimoire authorize    # prompts for master password in terminal
+grimoire approve     # prompts for master password in terminal
 ssh git@github.com   # approved for this session
 ```
 
@@ -162,7 +162,7 @@ Access approval is scoped to the caller's terminal session by default. A process
 
 The GUI prompt requirement for SSH signing serves the same purpose as for CLI vault operations: defense against blind RCE. An attacker with command execution but no display access cannot approve signing without physical interaction with the GUI dialog.
 
-In headless environments, `grimoire authorize` provides an equivalent: the attacker would need to know the master password.
+In headless environments, `grimoire approve` provides an equivalent: the attacker would need to know the master password.
 
 ### Ed25519 only
 
@@ -202,13 +202,13 @@ Security parameters are hardcoded and not configurable:
 
 ### `ssh` fails with "permission denied" or "signing failed"
 
-- **Not approved**: run `grimoire authorize` in the same terminal session, then retry
-- **Approval expired**: approvals last `approval_seconds` (default: 5 min). Re-authorize
+- **Not approved**: run `grimoire approve` in the same terminal session, then retry
+- **Approval expired**: approvals last `approval_seconds` (default: 5 min). Re-approve
 - **Auto-locked**: the vault locked due to inactivity. Run `grimoire status` to check, then unlock
 - **Key type**: only Ed25519 is supported. Check your vault key type
 
 ### Keys appear in `ssh-add -l` but signing fails
 
-- **Access approval**: most likely cause. Run `grimoire authorize` and retry
+- **Access approval**: most likely cause. Run `grimoire approve` and retry
 - Check service logs: `journalctl --user -u grimoire -f`
 - The key's private key data may be corrupted or in an unsupported format

@@ -10,7 +10,7 @@ On a desktop, Grimoire uses GUI prompts for:
 
 On a headless machine, there's no display for these prompts. You have two options:
 1. Use **terminal prompts** — type your password in the terminal
-2. Use **`grimoire authorize`** — pre-approve access for your terminal session
+2. Use **`grimoire approve`** — pre-approve access for your terminal session
 
 The security model shifts: on desktop, the GUI prompt is the defense against blind RCE (attacker has shell but can't interact with the dialog). On headless, that defense isn't available — the terminal is the only authentication boundary.
 
@@ -34,7 +34,7 @@ For fully automated CI environments:
 method = "none"           # never prompt — caller must provide password in RPC params
 ```
 
-Access approval is always required and cannot be disabled. In automated environments, use `grimoire authorize` with the master password piped to stdin.
+Access approval is always required and cannot be disabled. In automated environments, use `grimoire approve` with the master password piped to stdin.
 
 ### Service
 
@@ -67,7 +67,7 @@ grimoire unlock --terminal
 grimoire list
 ```
 
-When you unlock with a direct password (terminal mode), access approval is automatically granted for your terminal session. You don't need a separate `grimoire authorize` step.
+When you unlock with a direct password (terminal mode), access approval is automatically granted for your terminal session. You don't need a separate `grimoire approve` step.
 
 ### Subsequent Connections
 
@@ -75,7 +75,7 @@ If the service is still running and the vault is unlocked (hasn't auto-locked):
 
 ```bash
 ssh user@server
-grimoire authorize         # re-authorize this new session
+grimoire approve          # pre-approve access for this new session
 grimoire list              # works
 ```
 
@@ -88,14 +88,14 @@ grimoire list              # auto-prompts for password, unlocks, shows list
 
 ### Multiple Terminal Sessions
 
-Each SSH connection is a different terminal session. Approval is scoped per session by default, so you need to authorize each one:
+Each SSH connection is a different terminal session. Approval is scoped per session by default, so you need to approve each one:
 
 ```bash
 # Terminal 1
-grimoire authorize         # approved
+grimoire approve          # approved
 
 # Terminal 2 (separate SSH connection)
-grimoire authorize         # need to authorize again
+grimoire approve          # need to approve again
 ```
 
 This is intentional — it prevents a background process from riding on your interactive session's approval.
@@ -124,8 +124,8 @@ if grimoire status 2>/dev/null | grep -q "Locked"; then
   echo "$GRIMOIRE_PASSWORD" | grimoire unlock --terminal
 fi
 
-# Re-authorize if approval expired (approval lasts 5 min)
-echo "$GRIMOIRE_PASSWORD" | grimoire authorize
+# Re-approve if approval expired (approval lasts 5 min)
+echo "$GRIMOIRE_PASSWORD" | grimoire approve
 
 # Use secrets
 DB_PASS="grimoire:prod-db/password" grimoire run -- ./deploy.sh
@@ -134,8 +134,8 @@ DB_PASS="grimoire:prod-db/password" grimoire run -- ./deploy.sh
 ### Security Notes for CI
 
 - The master password must be available to the CI runner — store it as a CI secret (GitHub Actions secret, GitLab CI variable, etc.)
-- Access approval is always required — CI scripts must use `grimoire authorize` to grant it
-- Approval lasts 5 minutes — long-running jobs may need periodic re-authorization
+- Access approval is always required — CI scripts must use `grimoire approve` to grant it
+- Approval lasts 5 minutes — long-running jobs may need periodic re-approval
 - Consider whether you actually need Grimoire in CI, or whether your CI platform's native secret management is sufficient
 - The vault should be locked/logged out at the end of the job
 
@@ -147,8 +147,8 @@ The SSH agent works on headless machines. Pre-authorize before using it:
 # Set the socket
 export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/grimoire/ssh-agent.sock"
 
-# Authorize for this session
-grimoire authorize
+# Approve access for this session
+grimoire approve
 
 # Now SSH agent signing works
 ssh-add -l               # lists keys
@@ -156,7 +156,7 @@ ssh git@github.com       # signs successfully
 git push                 # commit signing works too
 ```
 
-Without `grimoire authorize`, the agent will attempt a GUI prompt, fail (no display), and reject the signing request. The SSH client sees "signing failed."
+Without `grimoire approve`, the agent will attempt a GUI prompt, fail (no display), and reject the signing request. The SSH client sees "signing failed."
 
 ## Troubleshooting
 
@@ -177,7 +177,7 @@ The vault auto-locked. SSH agent requests don't reset the inactivity timer. Eith
 - Have your script run `grimoire status` periodically
 - Re-unlock when needed
 
-### `grimoire authorize` says "already authorized"
+### `grimoire approve` says "already approved"
 
 Your session is already approved. The approval might have been granted by a previous `grimoire unlock --terminal` in the same session.
 

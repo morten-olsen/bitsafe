@@ -6,7 +6,7 @@
 //!
 //! Access approval is enforced on signing: the SSH client's peer PID is resolved
 //! to a scope key (same as CLI commands). If approval is not cached, signing is
-//! rejected — the user must pre-authorize via `grimoire authorize` or the GUI
+//! rejected — the user must pre-authorize via `grimoire approve` or the GUI
 //! prompt will be triggered (if available).
 
 use crate::session::resolve_scope_key;
@@ -127,7 +127,7 @@ impl ssh_agent_lib::agent::Session for SshAgentSession {
         // Enforce access approval — same scoping as CLI vault commands
         if !self.check_approval().await? {
             return Err(agent_err(
-                "Access approval required — run `grimoire authorize` or approve via GUI",
+                "Access approval required — run `grimoire approve` or approve via GUI",
             ));
         }
 
@@ -190,7 +190,7 @@ impl SshAgentSession {
         if !approved {
             tracing::info!(
                 scope_key,
-                "SSH agent: approval denied — run `grimoire authorize`"
+                "SSH agent: approval denied — run `grimoire approve`"
             );
         }
 

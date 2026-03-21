@@ -134,12 +134,12 @@ pub fn handle_totp(response: Response, json: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_authorize(response: Response, json: bool) -> Result<()> {
+pub fn handle_approve(response: Response, json: bool) -> Result<()> {
     check_error(&response)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&response.result)?);
     } else {
-        println!("Authorized. Session refreshed and access approved.");
+        println!("Approved. Session refreshed and access granted.");
     }
     Ok(())
 }

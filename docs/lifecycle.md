@@ -97,9 +97,9 @@ The prompt fallback chain is: biometric → PIN (if set) → master password dia
 When there is no display (SSH session, headless server, CI), the GUI prompt is unavailable. The user pre-authorizes by entering their master password:
 
 ```
-$ grimoire authorize
+$ grimoire approve
 Master password: ********
-Authorized. Session refreshed and access approved.
+Approved. Session refreshed and access approved.
 
 $ grimoire get <id> -f password    # no prompt, works immediately
 $ ssh git@github.com              # no prompt, works immediately
@@ -121,7 +121,7 @@ Approval is scoped — it doesn't apply system-wide. The scope determines which 
 
 | Scope | Config value | Behavior |
 |-------|-------------|----------|
-| Terminal session | `session` (default) | All processes in the same terminal session share approval. This means `grimoire authorize` in one terminal approves `ssh` commands in that same terminal, but not in a different terminal. |
+| Terminal session | `session` (default) | All processes in the same terminal session share approval. This means `grimoire approve` in one terminal approves `ssh` commands in that same terminal, but not in a different terminal. |
 | Process | `pid` | Only the exact PID that was approved. Each command needs its own approval. |
 | Connection | `connection` | Each socket connection requires fresh approval. Most restrictive. |
 
@@ -132,7 +132,7 @@ The scope key is resolved from the connecting process's PID:
 
 ### Duration
 
-Approval lasts for `approval_seconds` (default: 300 seconds / 5 minutes). After expiry, the next sensitive operation triggers a new prompt (GUI) or requires re-authorization (`grimoire authorize`).
+Approval lasts for `approval_seconds` (default: 300 seconds / 5 minutes). After expiry, the next sensitive operation triggers a new prompt (GUI) or requires re-approval (`grimoire approve`).
 
 ## Unified Lifecycle: CLI and SSH
 
@@ -145,7 +145,7 @@ CLI commands and SSH signing go through the same gates:
 | Scope key resolution | From CLI process PID | From SSH client PID |
 | Approval grant shared | Yes, same cache | Yes, same cache |
 
-Because both paths use the same approval cache with the same scope key resolution, a single `grimoire authorize` (or a single GUI prompt approval) unlocks both CLI and SSH access for that terminal session.
+Because both paths use the same approval cache with the same scope key resolution, a single `grimoire approve` (or a single GUI prompt approval) unlocks both CLI and SSH access for that terminal session.
 
 ### Example: SSH session workflow
 
@@ -153,10 +153,10 @@ Because both paths use the same approval cache with the same scope key resolutio
 # SSH into the machine
 local$ ssh server
 
-# Option A: explicit pre-authorization
-server$ grimoire authorize
+# Option A: explicit pre-approval
+server$ grimoire approve
 Master password: ********
-Authorized.
+Approved.
 
 # Option B: any vault command auto-prompts if locked
 server$ grimoire list
@@ -172,7 +172,7 @@ server$ ssh git@github.com              # approved (same session scope)
 # After 5 minutes, approval expires
 server$ grimoire get <id> -f password
 Authorization required.
-Master password: ********              # re-authorize
+Master password: ********              # re-approve
 <password printed>
 ```
 
@@ -237,9 +237,9 @@ method = "auto"                 # auto | gui | terminal | none
 | `grimoire login <email>` | One-time setup. Prompts for master password. Moves to Locked state. |
 | `grimoire unlock` | GUI dialog for master password. Moves to Unlocked. Grants approval if password given directly. |
 | `grimoire unlock --terminal` | Terminal prompt for master password. Moves to Unlocked. Grants approval. |
-| `grimoire authorize` | Terminal prompt for master password. Verifies against server. Grants approval. |
+| `grimoire approve` | Terminal prompt for master password. Verifies against server. Grants approval. |
 | `grimoire list` | If locked, auto-prompts. If approval needed, GUI prompt or fail. |
-| `grimoire get <id>` | Requires approval. GUI prompt if not approved, or pre-authorize with `grimoire authorize`. |
-| `ssh git@github.com` | Requires approval. GUI prompt if not approved, or pre-authorize with `grimoire authorize`. |
+| `grimoire get <id>` | Requires approval. GUI prompt if not approved, or pre-approve with `grimoire approve`. |
+| `ssh git@github.com` | Requires approval. GUI prompt if not approved, or pre-approve with `grimoire approve`. |
 | `grimoire lock` | Scrubs keys, clears all approvals. Master password required to unlock again. |
 | `grimoire logout` | Clears everything. Must `grimoire login` again. |

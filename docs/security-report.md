@@ -23,7 +23,7 @@ Since the last audit (2026-03-20), significant improvements have been made:
 **New since last audit:**
 - Scoped access approval refactored into shared `approval.rs` module used by both JSON-RPC and SSH agent paths
 - RSA SSH key signing support added
-- `grimoire authorize` command for headless sessions
+- `grimoire approve` command for headless sessions
 - CI release pipeline with cosign signing
 
 This audit identified **2 critical findings**, **5 high-severity findings**, and **10 medium-severity findings**. All immediate and short-term findings have been addressed (see Post-Audit Fixes below). The remaining open findings are medium-term items.
@@ -674,7 +674,7 @@ Only 4 `unsafe` blocks across the entire codebase: `mlockall()`, `prctl()`, `get
 | New | **Added:** Encrypted IPC (X25519 + ChaCha20-Poly1305) |
 | New | **Added:** Shared approval module with biometric → PIN → password cascade |
 | New | **Added:** RSA SSH key signing |
-| New | **Added:** `grimoire authorize` for headless sessions |
+| New | **Added:** `grimoire approve` for headless sessions |
 
 ### Findings Still Open
 

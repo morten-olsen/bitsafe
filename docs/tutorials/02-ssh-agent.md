@@ -60,10 +60,10 @@ On the first use, you'll see a GUI approval prompt (biometric/PIN/password). Thi
 
 ### On Headless / SSH Sessions
 
-If you're already connected to a machine via SSH (no display), pre-authorize before using SSH keys:
+If you're already connected to a machine via SSH (no display), pre-approve access before using SSH keys:
 
 ```bash
-grimoire authorize          # prompts for master password in terminal
+grimoire approve           # prompts for master password in terminal
 ssh git@github.com         # works — approval cached for this session
 ```
 
@@ -118,7 +118,7 @@ Security parameters are hardcoded:
 - Approval lasts **5 minutes** per terminal session
 - Approval is scoped to the **terminal session leader PID** — all processes in the same terminal session share one approval grant
 
-Run `grimoire authorize` once, and all `ssh` / `git` commands in that terminal work for 5 minutes.
+Run `grimoire approve` once, and all `ssh` / `git` commands in that terminal work for 5 minutes.
 
 ## Auto-Lock Gotcha
 
@@ -164,7 +164,7 @@ grimoire sync
 Most likely cause: access approval not granted.
 
 ```bash
-grimoire authorize    # grants approval for this terminal session
+grimoire approve     # grants approval for this terminal session
 ssh git@github.com   # retry
 ```
 

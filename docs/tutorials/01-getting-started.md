@@ -144,10 +144,10 @@ After the first biometric or password verification, you can set a PIN for faster
 
 ### Headless Environments
 
-Access approval cannot be disabled — it's a hardcoded security invariant. On headless machines without a GUI, use `grimoire authorize` to grant approval via master password in the terminal:
+Access approval cannot be disabled — it's a hardcoded security invariant. On headless machines without a GUI, use `grimoire approve` to pre-approve access via master password in the terminal:
 
 ```bash
-grimoire authorize    # prompts for master password
+grimoire approve     # prompts for master password
 grimoire list         # approved for this terminal session (5 min)
 ```
 

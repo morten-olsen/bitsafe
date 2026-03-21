@@ -249,7 +249,7 @@ url = "https://vault.example.com"
 method = "terminal"
 ```
 
-Access approval is always required. On Termux, use `grimoire authorize` to grant approval for your terminal session (prompts for master password).
+Access approval is always required. On Termux, use `grimoire approve` to pre-approve access for your terminal session (prompts for master password).
 
 ### Running
 
@@ -275,7 +275,7 @@ chmod +x ~/.termux/boot/grimoire.sh
 - No biometric or GUI prompts — terminal password entry only
 - No `mlockall` or `PR_SET_DUMPABLE` — Android's security model is different
 - SSH agent works if you set `SSH_AUTH_SOCK` correctly
-- Access approval works via `grimoire authorize` (master password in terminal)
+- Access approval works via `grimoire approve` (master password in terminal)
 
 ## Configuration
 

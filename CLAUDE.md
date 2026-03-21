@@ -122,10 +122,10 @@ Full investigation documented in `docs/sdk-integration.md`.
 - **`grimoire run` uses exec** — after resolving `grimoire:<id>/<field>` references in env vars, the process is replaced via `execvp()`. No wrapper process, no TTY breakage. All resolution errors must happen before exec. See `docs/secret-injection.md` and `specs/007-secret-injection.md`.
 - **Vaultwarden SSH key requirement**: Vaultwarden must have `EXPERIMENTAL_CLIENT_FEATURE_FLAGS=fido2-vault-credentials,ssh-key-vault-item,ssh-agent` set — without this, SSH key ciphers (type 5) are filtered from the sync response entirely
 - SSH signing currently supports Ed25519 only; RSA/ECDSA can be added
-- **SSH agent enforces access approval** — the embedded agent extracts the SSH client's peer PID via `SO_PEERCRED` and checks the approval cache before signing. If not approved, it tries GUI prompt (biometric/PIN/password); if no GUI, signing fails. Users pre-authorize from headless sessions via `grimoire authorize`. See `docs/ssh-agent.md`.
-- **`grimoire authorize`** — CLI command for headless/SSH sessions. Prompts for master password in terminal, verifies against the server (prelogin + derive + token request), then refreshes session + grants scoped access approval. Same backoff rules as login/unlock.
-- **CLI auto-prompt** — vault commands (`list`, `get`, `totp`, `sync`, `run`) auto-prompt for master password when the vault is locked (error 1000) or approval is needed (error 1006/1008/1011). No separate `unlock` step required.
-- **Unlock grants approval when password is direct** — `handle_unlock` grants scoped access approval when the password is provided in the request (CLI/SSH), not via GUI prompt. This means one password entry handles both unlock and approval.
+- **SSH agent enforces access approval** — the embedded agent extracts the SSH client's peer PID via `SO_PEERCRED` and checks the approval cache before signing. If not approved, it tries GUI prompt (biometric/PIN/password); if no GUI, signing fails. Users pre-approve from headless sessions via `grimoire approve`. See `docs/ssh-agent.md`.
+- **`grimoire approve`** — CLI command for headless/SSH sessions. Prompts for master password in terminal, verifies against the server (prelogin + derive + token request), then refreshes session + grants scoped access approval. Same backoff rules as login/unlock.
+- **CLI auto-unlock** — vault commands (`list`, `get`, `totp`, `sync`, `run`) automatically request unlock via the service's GUI prompt when the vault is locked (error 1000). If no GUI is available (error 1008), the CLI tells the user to run `grimoire approve` first. Access approval is handled by the service's own GUI flow (biometric → PIN → password), not by the CLI.
+- **Unlock always grants approval** — `handle_unlock` grants scoped access approval on successful unlock regardless of whether the password came from CLI, GUI prompt, or `grimoire approve`. One password entry handles both unlock and approval.
 
 ### Specific SDK incompatibilities with Vaultwarden (discovered the hard way)
 
@@ -139,7 +139,7 @@ Full investigation documented in `docs/sdk-integration.md`.
 
 - `RequestParams` is `#[serde(untagged)]` — deserialization tries variants in declaration order. Structs with all-optional fields (like `UnlockParams`, `VaultListParams`) will greedily match any input. Use `#[serde(deny_unknown_fields)]` on every variant struct to prevent false matches.
 - `LoginParams.password` and `UnlockParams.password` are both `Option<String>` — `None` means "service should spawn the GUI prompt agent"
-- **Login** prompts in the terminal (one-time setup). **Unlock** always sends `None` — password entry goes through the GUI prompt to require visual confirmation (defense against RCE — attacker with shell access can trigger unlock but can't complete it without interacting with the GUI dialog on the user's display).
+- **Login** prompts in the terminal (one-time setup). **Unlock and approval** go through the service's GUI prompt (defense against RCE — attacker with shell access can trigger unlock but can't complete it without interacting with the GUI dialog on the user's display). For headless/SSH sessions, `grimoire approve` provides a terminal-based pre-approval path.
 - Responses use `skip_serializing_if = "Option::is_none"` — clients must handle both `null` and missing-key as equivalent
 
 ## Service State Machine

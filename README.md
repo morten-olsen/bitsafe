@@ -76,7 +76,7 @@ Here's the flow:
 4. After **5 minutes**, the approval expires. Want more secrets? Prove you're you again.
 5. All of these parameters are **hardcoded**. Not configurable. Not optional. Not "off by default but you can enable it." On. Always. Forever.
 
-**Why this matters**: Imagine an attacker gets shell access to your machine — RCE, compromised SSH key, that mass npm package you installed without checking, whatever. They run `grimoire list`. A dialog box pops up on your screen. They're sitting in their apartment in another timezone staring at a shell prompt wondering why nothing happened. They need your fingerprint, your PIN, or your master password. If they have your master password, they *could* use `grimoire authorize` — but at that point both your computer and your master password are compromised, and you have much bigger problems than Grimoire's approval model. Like explaining to your team why the deploy keys are now on a Telegram channel, your DNS is pointing to a parking page, and someone is mass mining Dogecoin on your Kubernetes cluster.
+**Why this matters**: Imagine an attacker gets shell access to your machine — RCE, compromised SSH key, that mass npm package you installed without checking, whatever. They run `grimoire list`. A dialog box pops up on your screen. They're sitting in their apartment in another timezone staring at a shell prompt wondering why nothing happened. They need your fingerprint, your PIN, or your master password. If they have your master password, they *could* use `grimoire approve` — but at that point both your computer and your master password are compromised, and you have much bigger problems than Grimoire's approval model. Like explaining to your team why the deploy keys are now on a Telegram channel, your DNS is pointing to a parking page, and someone is mass mining Dogecoin on your Kubernetes cluster.
 
 We learned our lesson from every tool that shipped with `--disable-security-for-testing` and discovered that production *is* the test environment. You can't turn this off. We're sorry. We're not actually sorry.
 
@@ -119,7 +119,7 @@ The boring list, but we'll try to make it less boring:
 - **Shell completions** — bash, zsh, fish. We're not animals.
 - **Persistent login** — service restarts only need `unlock`, not a full `login`. Because retyping your email and server URL every time your laptop wakes from sleep would make us uninstall our own software.
 - **Git commit signing** — sign commits with SSH keys from your vault. No key files. No GPG. No existential crisis about expired subkeys.
-- **Headless support** — `grimoire authorize` for SSH sessions and servers without displays. Because not every machine has a screen, but every machine deserves secrets.
+- **Headless support** — `grimoire approve` for SSH sessions and servers without displays. Because not every machine has a screen, but every machine deserves secrets.
 - **Hardcoded security** — security parameters are compile-time constants. `auto_lock_seconds = 0` is not a power user setting. It's a cry for help. We hardcoded the defaults so you can't weaken them. You're welcome. Please stop asking.
 
 ## Quick Install

@@ -64,8 +64,8 @@ enum Commands {
         /// Item ID
         id: String,
     },
-    /// Authorize access by entering the master password (for SSH/headless sessions)
-    Authorize,
+    /// Pre-approve access by entering the master password (for SSH/headless sessions)
+    Approve,
     /// Force a vault sync
     Sync,
     /// Lock the vault
@@ -194,7 +194,7 @@ async fn main() -> Result<()> {
             ),
             Box::new(commands::handle_totp),
         ),
-        Commands::Authorize => {
+        Commands::Approve => {
             let password = Zeroizing::new(
                 rpassword::prompt_password("Master password: ")
                     .context("Failed to read password")?,
@@ -207,7 +207,7 @@ async fn main() -> Result<()> {
                         password: Some(password),
                     })),
                 ),
-                Box::new(commands::handle_authorize),
+                Box::new(commands::handle_approve),
             )
         }
         Commands::Sync => (
@@ -241,64 +241,34 @@ async fn main() -> Result<()> {
 
     let mut response = send_request(request.clone()).await?;
 
-    // Auto-prompt for master password when the vault is locked, session expired,
-    // prompt unavailable, or access approval denied. This lets users run vault
-    // commands directly without a separate unlock/authorize step.
+    // Auto-unlock via GUI prompt when the vault is locked. Vault operations
+    // also require access approval, which the service handles via its own
+    // GUI prompt flow (biometric → PIN → password). If no GUI is available,
+    // the user must pre-approve via `grimoire approve`.
     if let Some(err) = &response.error {
         match err.code {
             error_codes::VAULT_LOCKED => {
-                // Vault locked — unlock with master password, then retry.
-                // Unlock with a direct password also grants access approval,
-                // so authorize doesn't need to be retried.
-                eprintln!("Vault is locked.");
-                // Reuse password from original request if available (e.g., authorize
-                // already prompted for it) to avoid a redundant second prompt.
-                let password = match &request.params {
-                    Some(RequestParams::Unlock(UnlockParams { password: Some(pw) })) => pw.clone(),
-                    _ => Zeroizing::new(
-                        rpassword::prompt_password("Master password: ")
-                            .context("Failed to read password")?,
-                    ),
-                };
+                // Vault locked — ask the service to unlock via GUI prompt.
+                eprintln!("Vault is locked. Requesting unlock...");
                 let unlock_resp = send_request(Request::new(
                     1,
                     methods::AUTH_UNLOCK,
-                    Some(RequestParams::Unlock(UnlockParams {
-                        password: Some(password),
-                    })),
+                    Some(RequestParams::Unlock(UnlockParams { password: None })),
                 ))
                 .await?;
                 commands::check_error(&unlock_resp)?;
                 eprintln!("Vault unlocked.");
 
-                if request.method == methods::AUTH_AUTHORIZE {
-                    // Unlock already granted approval — no need to re-enter password
-                    response = unlock_resp;
-                } else {
-                    // Wait briefly for background sync to populate vault data
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    response = send_request(request).await?;
-                }
-            }
-            error_codes::SESSION_EXPIRED
-            | error_codes::PROMPT_UNAVAILABLE
-            | error_codes::ACCESS_DENIED => {
-                // Session expired / prompt unavailable / access approval denied
-                eprintln!("Authorization required.");
-                let password = Zeroizing::new(
-                    rpassword::prompt_password("Master password: ")
-                        .context("Failed to read password")?,
-                );
-                let auth_resp = send_request(Request::new(
-                    1,
-                    methods::AUTH_AUTHORIZE,
-                    Some(RequestParams::Unlock(UnlockParams {
-                        password: Some(password),
-                    })),
-                ))
-                .await?;
-                commands::check_error(&auth_resp)?;
+                // Wait briefly for background sync to populate vault data
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 response = send_request(request).await?;
+            }
+            error_codes::PROMPT_UNAVAILABLE => {
+                // No GUI available — tell the user to pre-approve
+                anyhow::bail!(
+                    "No GUI prompt available. Run `grimoire approve` first to \
+                     pre-approve access, then retry."
+                );
             }
             _ => {}
         }
@@ -542,21 +512,15 @@ async fn handle_run(command: Vec<String>) -> Result<()> {
 
         let mut response = send_request(resolve_request.clone()).await?;
 
-        // Auto-prompt if vault is locked or authorization is needed
+        // Auto-unlock via GUI prompt if vault is locked
         if let Some(err) = &response.error {
             match err.code {
                 error_codes::VAULT_LOCKED => {
-                    eprintln!("Vault is locked.");
-                    let password = Zeroizing::new(
-                        rpassword::prompt_password("Master password: ")
-                            .context("Failed to read password")?,
-                    );
+                    eprintln!("Vault is locked. Requesting unlock...");
                     let unlock_resp = send_request(Request::new(
                         1,
                         methods::AUTH_UNLOCK,
-                        Some(RequestParams::Unlock(UnlockParams {
-                            password: Some(password),
-                        })),
+                        Some(RequestParams::Unlock(UnlockParams { password: None })),
                     ))
                     .await?;
                     commands::check_error(&unlock_resp)?;
@@ -564,24 +528,11 @@ async fn handle_run(command: Vec<String>) -> Result<()> {
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     response = send_request(resolve_request).await?;
                 }
-                error_codes::SESSION_EXPIRED
-                | error_codes::PROMPT_UNAVAILABLE
-                | error_codes::ACCESS_DENIED => {
-                    eprintln!("Authorization required.");
-                    let password = Zeroizing::new(
-                        rpassword::prompt_password("Master password: ")
-                            .context("Failed to read password")?,
+                error_codes::PROMPT_UNAVAILABLE => {
+                    anyhow::bail!(
+                        "No GUI prompt available. Run `grimoire approve` first to \
+                         pre-approve access, then retry."
                     );
-                    let auth_resp = send_request(Request::new(
-                        1,
-                        methods::AUTH_AUTHORIZE,
-                        Some(RequestParams::Unlock(UnlockParams {
-                            password: Some(password),
-                        })),
-                    ))
-                    .await?;
-                    commands::check_error(&auth_resp)?;
-                    response = send_request(resolve_request).await?;
                 }
                 _ => {}
             }
@@ -684,34 +635,6 @@ mod tests {
         let r = parse_grimoire_ref("grimoire://GitHub API/password").unwrap();
         assert_eq!(r.id, "//GitHub API");
         assert_eq!(r.field, "password");
-    }
-
-    /// Regression: `grimoire authorize` with locked vault should reuse the password
-    /// from the original request instead of prompting a second time.
-    #[test]
-    fn auto_unlock_reuses_password_from_authorize_request() {
-        let password = Zeroizing::new("test-password".to_string());
-        let params = Some(RequestParams::Unlock(UnlockParams {
-            password: Some(password.clone()),
-        }));
-
-        // The auto-prompt handler extracts the password from the original request
-        let extracted = match &params {
-            Some(RequestParams::Unlock(UnlockParams { password: Some(pw) })) => Some(pw.clone()),
-            _ => None,
-        };
-        assert_eq!(extracted, Some(password));
-    }
-
-    #[test]
-    fn auto_unlock_prompts_when_no_password_in_request() {
-        // Requests without a password (e.g., vault.list) should not extract one
-        let params: Option<RequestParams> = None;
-        let extracted = match &params {
-            Some(RequestParams::Unlock(UnlockParams { password: Some(pw) })) => Some(pw.clone()),
-            _ => None,
-        };
-        assert_eq!(extracted, None);
     }
 
     #[test]
