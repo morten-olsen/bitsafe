@@ -97,10 +97,31 @@ pub fn parse_config(toml_str: &str) -> Result<Config, toml::de::Error> {
 }
 
 /// Load config from the default path, returning defaults if the file doesn't exist.
+///
+/// Warns if the config file is group/world-writable — an attacker who can modify
+/// the config can redirect `server.url` to capture the master password hash.
 pub fn load_config() -> Config {
     let Some(path) = config_path() else {
         return Config::default();
     };
+
+    // Check permissions before reading — world/group-writable config is a security risk.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(meta) = std::fs::metadata(&path) {
+            let mode = meta.mode();
+            if mode & 0o022 != 0 {
+                tracing::warn!(
+                    path = %path.display(),
+                    mode = format!("{mode:04o}"),
+                    "Config file is group/world-writable — this is a security risk. \
+                     Fix with: chmod 600 {}",
+                    path.display(),
+                );
+            }
+        }
+    }
 
     match std::fs::read_to_string(&path) {
         Ok(contents) => toml::from_str(&contents).unwrap_or_else(|e| {
