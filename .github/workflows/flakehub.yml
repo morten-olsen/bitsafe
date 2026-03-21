@@ -1,0 +1,30 @@
+name: Publish to FlakeHub
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g., v0.1.0)"
+        required: true
+
+permissions:
+  id-token: write  # Required for FlakeHub OIDC authentication
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to FlakeHub
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: DeterminateSystems/flakehub-push@main
+        with:
+          visibility: "public"
+          tag: ${{ inputs.tag || github.ref_name }}
