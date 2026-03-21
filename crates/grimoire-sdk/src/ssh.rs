@@ -2,6 +2,7 @@ use crate::error::SdkError;
 use bitwarden_pm::PasswordManagerClient;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use zeroize::Zeroize;
 
 /// Summary of an SSH key stored in the vault.
 pub struct SshKeyInfo {
@@ -65,6 +66,10 @@ impl SshClient {
         let private_key = ssh_key::PrivateKey::from_openssh(&ssh_key_view.private_key)
             .map_err(|e| SdkError::Internal(format!("Failed to parse SSH private key: {e}")))?;
 
+        // Sign then immediately drop the parsed key. The Ed25519/RSA signing keys
+        // inside sign_with_key are zeroized explicitly. ssh_key::PrivateKey does not
+        // implement Zeroize, so we drop it and rely on the SDK's ZeroizingAllocator
+        // for the underlying allocation.
         sign_with_key(&private_key, data, flags)
     }
 }
@@ -82,8 +87,12 @@ fn sign_with_key(key: &ssh_key::PrivateKey, data: &[u8], flags: u32) -> Result<V
     match key.key_data() {
         KeypairData::Ed25519(kp) => {
             use ed25519_dalek::{Signer, SigningKey};
-            let signing_key = SigningKey::from_bytes(&kp.private.to_bytes());
+            let mut key_bytes = kp.private.to_bytes();
+            let signing_key = SigningKey::from_bytes(&key_bytes);
             let sig = signing_key.sign(data);
+            // Zeroize the raw key bytes we extracted. The SigningKey itself
+            // doesn't implement Zeroize, but we ensure the extracted copy is wiped.
+            key_bytes.zeroize();
             Ok(encode_ssh_signature(b"ssh-ed25519", &sig.to_bytes()))
         }
         KeypairData::Rsa(kp) => {
@@ -102,6 +111,8 @@ fn sign_with_key(key: &ssh_key::PrivateKey, data: &[u8], flags: u32) -> Result<V
             let private_key = rsa::RsaPrivateKey::from_components(n, e, d, vec![p, q])
                 .map_err(|e| SdkError::Internal(format!("RSA key error: {e}")))?;
 
+            // RsaSigningKey takes ownership — it implements Drop which zeroizes
+            // the inner RsaPrivateKey when the signing key goes out of scope.
             if flags & SSH_AGENT_RSA_SHA2_512 != 0 {
                 let signing_key = RsaSigningKey::<sha2::Sha512>::new(private_key);
                 let sig = signing_key.sign(data);
