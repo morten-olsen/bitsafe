@@ -11,8 +11,8 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  check:
-    name: Check & Lint
+  gate:
+    name: Quality Gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,25 +24,24 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy --workspace -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
 
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.os }}
+          key: macos
       - name: Run tests
         run: cargo test --workspace
 
   build:
     name: Build (${{ matrix.os }})
+    needs: [gate]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -76,3 +75,15 @@ jobs:
             native/linux/target/release/grimoire-prompt-linux
             native/macos/.build/release/grimoire-prompt-macos
           if-no-files-found: ignore
+
+  nix:
+    name: Nix Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Check flake
+        run: nix flake check
+      - name: Build default package
+        run: nix build

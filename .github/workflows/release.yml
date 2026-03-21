@@ -6,13 +6,31 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # Required for cosign keyless signing via GitHub OIDC
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+
   build:
     name: Build (${{ matrix.target }})
+    needs: [gate]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -22,11 +40,10 @@ jobs:
             os: ubuntu-latest
             native_prompt: linux
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             native_prompt: linux
-            cross: true
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             native_prompt: macos
           - target: aarch64-apple-darwin
             os: macos-latest
@@ -35,29 +52,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install cross-compilation tools
-        if: matrix.cross
-        run: cargo install cross --locked
 
       - name: Install Linux native prompt deps
-        if: matrix.native_prompt == 'linux' && !matrix.cross
+        if: matrix.native_prompt == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
 
       - name: Build workspace
-        run: |
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --workspace --release --target ${{ matrix.target }}
-          else
-            cargo build --workspace --release --target ${{ matrix.target }}
-          fi
+        run: cargo build --workspace --release
 
       - name: Build native prompt (Linux)
-        if: matrix.native_prompt == 'linux' && !matrix.cross
+        if: matrix.native_prompt == 'linux'
         run: cd native/linux && cargo build --release
 
       - name: Build native prompt (macOS)
@@ -71,11 +77,11 @@ jobs:
           mkdir -p "${ARCHIVE}"
 
           # Core binaries
-          cp target/${{ matrix.target }}/release/grimoire "${ARCHIVE}/" 2>/dev/null || true
-          cp target/${{ matrix.target }}/release/grimoire-service "${ARCHIVE}/" 2>/dev/null || true
-          cp target/${{ matrix.target }}/release/grimoire-prompt "${ARCHIVE}/" 2>/dev/null || true
+          cp target/release/grimoire "${ARCHIVE}/"
+          cp target/release/grimoire-service "${ARCHIVE}/"
+          cp target/release/grimoire-prompt "${ARCHIVE}/"
 
-          # Native prompt (built for host architecture, not cross-compiled)
+          # Native prompt
           if [ -f native/linux/target/release/grimoire-prompt-linux ]; then
             cp native/linux/target/release/grimoire-prompt-linux "${ARCHIVE}/"
           fi
@@ -83,7 +89,7 @@ jobs:
             cp native/macos/.build/release/grimoire-prompt-macos "${ARCHIVE}/"
           fi
 
-          # Service files
+          # Service files and install script
           cp -r contrib "${ARCHIVE}/"
 
           tar czf "${ARCHIVE}.tar.gz" "${ARCHIVE}"
@@ -95,15 +101,65 @@ jobs:
           name: ${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
 
-  release:
-    name: Create Release
-    needs: build
+  sign:
+    name: Sign & Publish
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+        with:
+          fetch-depth: 0  # Full history for git-cliff changelog
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Generate checksums
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          CHECKSUMS="grimoire-${TAG}-checksums.sha256"
+          cd artifacts
+          find . -name '*.tar.gz' -exec sha256sum {} + | sed 's|  \./[^/]*/|  |' > "../${CHECKSUMS}"
+          cd ..
+          echo "CHECKSUMS=${CHECKSUMS}" >> $GITHUB_ENV
+          cat "${CHECKSUMS}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksums
+        run: |
+          cosign sign-blob "${CHECKSUMS}" \
+            --yes \
+            --output-signature "${CHECKSUMS}.sig" \
+            --output-certificate "${CHECKSUMS}.cert"
+
+      - name: Generate changelog
+        run: |
+          pip install git-cliff
+          # Generate changelog for this tag only
+          git-cliff --latest --strip header > RELEASE_NOTES.md
+          # Append verification instructions
+          cat >> RELEASE_NOTES.md << 'FOOTER'
+
+          ---
+
+          ## Verification
+
+          ```bash
+          # Verify checksum
+          sha256sum -c grimoire-*-checksums.sha256 --ignore-missing
+
+          # Verify signature (requires cosign)
+          cosign verify-blob \
+            --certificate grimoire-*-checksums.sha256.cert \
+            --signature grimoire-*-checksums.sha256.sig \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp 'https://github\.com/.*/.*/\.github/workflows/release\.yml@.*' \
+            grimoire-*-checksums.sha256
+          ```
+          FOOTER
 
       - name: Create release
         env:
@@ -112,5 +168,8 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           gh release create "${TAG}" \
             --title "${TAG}" \
-            --generate-notes \
-            artifacts/**/*.tar.gz
+            --notes-file RELEASE_NOTES.md \
+            artifacts/**/*.tar.gz \
+            "${CHECKSUMS}" \
+            "${CHECKSUMS}.sig" \
+            "${CHECKSUMS}.cert"

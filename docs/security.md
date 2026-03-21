@@ -201,6 +201,30 @@ After successful login, the service saves encrypted credentials to `~/.local/sha
 - `serde_json` — JSON parsing, no known vulnerabilities
 - `libc` — FFI for mlockall/prctl, Linux-only
 
+## Release Pipeline & Supply Chain
+
+### Artifact integrity
+
+- Every release tarball is SHA256-checksummed — checksums file uploaded as a release asset
+- Checksums file is signed with **cosign keyless** (GitHub OIDC identity) — verifiers confirm the signature came from the release workflow, not just someone with a key
+- Install script (`contrib/install.sh`) verifies SHA256 before extracting
+
+### Quality gate
+
+- Release workflow re-runs the full CI gate (fmt, clippy, tests) before building — `needs: [gate]` dependency on all build jobs
+- No release ships without passing checks, regardless of how the tag was created
+
+### Nix flake
+
+- `flake.lock` is committed — all input revisions are pinned, changes visible in PR diffs
+- NixOS module only exposes operational settings (server URL, prompt method, SSH agent toggle) — security parameters are hardcoded constants in the binary
+- systemd service includes sandboxing directives (`NoNewPrivileges`, `MemoryDenyWriteExecute`, etc.)
+
+### Prerequisites (not enforced by the pipeline)
+
+- **Branch protection** on `main` — workflow file changes require PR review
+- **Tag protection rules** — prevent deletion/overwrite of `v*` tags
+
 ## Known Issues Prioritized
 
 | Priority | Issue | Status |
