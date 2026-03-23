@@ -4,13 +4,18 @@
 //! to $XDG_RUNTIME_DIR/grimoire/ssh-agent.sock and the agent translates
 //! SSH protocol messages to vault operations.
 //!
+//! If the vault is locked when an SSH operation arrives, the agent automatically
+//! triggers a GUI unlock prompt (same as CLI auto-unlock). On successful unlock,
+//! access approval is granted and a background sync is triggered.
+//!
 //! Access approval is enforced on signing: the SSH client's peer PID is resolved
-//! to a scope key (same as CLI commands). If approval is not cached, signing is
-//! rejected — the user must pre-authorize via `grimoire approve` or the GUI
-//! prompt will be triggered (if available).
+//! to a scope key (same as CLI commands). If approval is not cached, the GUI
+//! prompt is triggered. For headless sessions, use `grimoire approve`.
 
+use crate::prompt;
 use crate::session::resolve_scope_key;
 use crate::state::{SharedState, VaultState};
+use grimoire_common::config::{PromptMethod, APPROVAL_SECONDS};
 use ssh_agent_lib::proto::{Identity, SignRequest};
 use ssh_agent_lib::ssh_key;
 
@@ -80,10 +85,20 @@ impl ssh_agent_lib::agent::Session for SshAgentSession {
         if self.rejected {
             return Ok(vec![]);
         }
-        let s = self.state.read().await;
-        if s.vault_state != VaultState::Unlocked {
-            return Ok(vec![]); // Locked or logged out — return empty
+        // If vault is locked (but logged in), attempt auto-unlock via GUI prompt.
+        {
+            let s = self.state.read().await;
+            if s.vault_state == VaultState::Locked {
+                drop(s);
+                if !self.attempt_unlock().await {
+                    return Ok(vec![]); // Unlock failed or unavailable — return empty
+                }
+            } else if s.vault_state != VaultState::Unlocked {
+                return Ok(vec![]); // Logged out — return empty
+            }
         }
+
+        let s = self.state.read().await;
         let Some(sdk) = &s.sdk else {
             return Ok(vec![]);
         };
@@ -116,11 +131,18 @@ impl ssh_agent_lib::agent::Session for SshAgentSession {
         if self.rejected {
             return Err(agent_err("Connection rejected"));
         }
-        // Check vault is unlocked
+        // If vault is locked (but logged in), attempt auto-unlock via GUI prompt.
         {
             let s = self.state.read().await;
-            if s.vault_state != VaultState::Unlocked {
-                return Err(agent_err("Vault is locked"));
+            if s.vault_state == VaultState::Locked {
+                drop(s);
+                if !self.attempt_unlock().await {
+                    return Err(agent_err(
+                        "Vault is locked — unlock failed or unavailable, run `grimoire approve`",
+                    ));
+                }
+            } else if s.vault_state != VaultState::Unlocked {
+                return Err(agent_err("Not logged in"));
             }
         }
 
@@ -163,6 +185,74 @@ impl ssh_agent_lib::agent::Session for SshAgentSession {
 }
 
 impl SshAgentSession {
+    /// Attempt to unlock the vault via the GUI prompt when it's in Locked state.
+    /// On success, also grants access approval and triggers a background sync.
+    /// Returns true if the vault was successfully unlocked.
+    async fn attempt_unlock(&self) -> bool {
+        tracing::info!(peer_pid = ?self.peer_pid, "SSH agent: vault locked, attempting auto-unlock");
+
+        // Respect master password backoff
+        {
+            let s = self.state.read().await;
+            let remaining = s.master_password_backoff_remaining();
+            if remaining > 0 {
+                tracing::info!(remaining, "SSH agent: master password backoff active");
+                return false;
+            }
+        }
+
+        // Prompt for password via GUI
+        let prompt_method = self.state.read().await.prompt_method.clone();
+        if prompt_method == PromptMethod::None {
+            tracing::info!("SSH agent: no prompt method available, run `grimoire approve`");
+            return false;
+        }
+
+        let password = match prompt::prompt_password(&prompt_method).await {
+            Ok(Some(pw)) => pw,
+            Ok(None) => {
+                tracing::info!("SSH agent: unlock cancelled by user");
+                return false;
+            }
+            Err(e) => {
+                tracing::warn!("SSH agent: prompt failed: {e}");
+                return false;
+            }
+        };
+
+        // Unlock the vault
+        let mut s = self.state.write().await;
+        match s.unlock(&password).await {
+            Ok(()) => {
+                s.reset_password_attempts();
+
+                // Grant access approval — user proved identity via master password
+                let scope_key = resolve_scope_key(self.peer_pid);
+                let duration = std::time::Duration::from_secs(APPROVAL_SECONDS);
+                s.approval_cache.grant(scope_key, duration);
+                tracing::info!(scope_key, "SSH agent: vault unlocked and access approved");
+
+                drop(s);
+
+                // Trigger background sync so vault data is available
+                let sync_state = self.state.clone();
+                tokio::spawn(async move {
+                    crate::sync_worker::sync_now(&sync_state).await;
+                });
+
+                // Wait briefly for sync to populate keys
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+                true
+            }
+            Err(e) => {
+                s.record_password_failure();
+                tracing::warn!("SSH agent: unlock failed: {e}");
+                false
+            }
+        }
+    }
+
     /// Check access approval for this connection's scope.
     /// Uses the shared approval flow (biometric → PIN → password with server verification).
     /// If no GUI is available and approval is not cached, returns false.
