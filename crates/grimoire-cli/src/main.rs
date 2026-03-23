@@ -136,6 +136,12 @@ enum ServiceAction {
     Install,
     /// Uninstall the service
     Uninstall,
+    /// Start the service
+    Start,
+    /// Stop the service
+    Stop,
+    /// Restart the service
+    Restart,
     /// Show the SSH_AUTH_SOCK path
     SshSocket,
 }
@@ -365,6 +371,9 @@ fn handle_service_action(action: ServiceAction) -> Result<()> {
         }
         ServiceAction::Install => install_service(),
         ServiceAction::Uninstall => uninstall_service(),
+        ServiceAction::Start => start_service(),
+        ServiceAction::Stop => stop_service(),
+        ServiceAction::Restart => restart_service(),
     }
 }
 
@@ -545,6 +554,155 @@ fn uninstall_service() -> Result<()> {
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         anyhow::bail!("Service uninstallation not supported on this platform");
+    }
+}
+
+fn ensure_service_installed() -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let unit_path = dirs::config_dir()
+            .context("Cannot determine config dir")?
+            .join("systemd/user/grimoire.service");
+        if !unit_path.exists() {
+            anyhow::bail!(
+                "Service is not installed. Run `grimoire service install` first."
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let plist_path = dirs::home_dir()
+            .context("Cannot determine home dir")?
+            .join("Library/LaunchAgents/com.grimoire.service.plist");
+        if !plist_path.exists() {
+            anyhow::bail!(
+                "Service is not installed. Run `grimoire service install` first."
+            );
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        anyhow::bail!("Service management not supported on this platform");
+    }
+
+    Ok(())
+}
+
+fn start_service() -> Result<()> {
+    ensure_service_installed()?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::process::Command::new("systemctl")
+            .args(["--user", "start", "grimoire"])
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("Failed to start service. Check `systemctl --user status grimoire` for details.");
+        }
+        println!("Service started.");
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let plist_path = dirs::home_dir()
+            .context("Cannot determine home dir")?
+            .join("Library/LaunchAgents/com.grimoire.service.plist");
+        let status = std::process::Command::new("launchctl")
+            .args(["load", "-w"])
+            .arg(&plist_path)
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("Failed to start service");
+        }
+        println!("Service started.");
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        anyhow::bail!("Service management not supported on this platform");
+    }
+}
+
+fn stop_service() -> Result<()> {
+    ensure_service_installed()?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::process::Command::new("systemctl")
+            .args(["--user", "stop", "grimoire"])
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("Failed to stop service. Check `systemctl --user status grimoire` for details.");
+        }
+        println!("Service stopped.");
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let plist_path = dirs::home_dir()
+            .context("Cannot determine home dir")?
+            .join("Library/LaunchAgents/com.grimoire.service.plist");
+        let status = std::process::Command::new("launchctl")
+            .args(["unload"])
+            .arg(&plist_path)
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("Failed to stop service");
+        }
+        println!("Service stopped.");
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        anyhow::bail!("Service management not supported on this platform");
+    }
+}
+
+fn restart_service() -> Result<()> {
+    ensure_service_installed()?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::process::Command::new("systemctl")
+            .args(["--user", "restart", "grimoire"])
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("Failed to restart service. Check `systemctl --user status grimoire` for details.");
+        }
+        println!("Service restarted.");
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let plist_path = dirs::home_dir()
+            .context("Cannot determine home dir")?
+            .join("Library/LaunchAgents/com.grimoire.service.plist");
+        // launchd has no native restart — unload then load
+        let _ = std::process::Command::new("launchctl")
+            .args(["unload"])
+            .arg(&plist_path)
+            .status();
+        let status = std::process::Command::new("launchctl")
+            .args(["load", "-w"])
+            .arg(&plist_path)
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("Failed to restart service");
+        }
+        println!("Service restarted.");
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        anyhow::bail!("Service management not supported on this platform");
     }
 }
 
