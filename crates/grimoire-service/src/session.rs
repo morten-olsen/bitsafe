@@ -692,7 +692,7 @@ async fn handle_sync_trigger(id: Option<u64>, state: &SharedState) -> Response {
     };
 
     match sync_result {
-        Ok(()) => {
+        Ok(_result) => {
             let mut s = state.write().await;
             s.last_sync = Some(chrono::Utc::now());
             success_result(id, OkResult { ok: true })
@@ -726,6 +726,7 @@ fn sdk_err_to_rpc(e: SdkError) -> RpcError {
         SdkError::AuthFailed(msg) => RpcError::auth_failed(msg),
         SdkError::NotFound(id) => RpcError::item_not_found(&id),
         SdkError::SyncFailed(msg) => RpcError::new(1004, msg),
+        SdkError::AuthRevoked => RpcError::auth_failed("Authentication revoked by server"),
         SdkError::Internal(msg) => {
             // Log the detailed error server-side; return a generic message to the client
             // to avoid leaking filesystem paths, library errors, or other internal state.

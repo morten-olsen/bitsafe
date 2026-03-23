@@ -1932,11 +1932,18 @@ dependencies = [
  "bitwarden-state",
  "bitwarden-sync",
  "bitwarden-vault",
+ "chacha20poly1305",
  "chrono",
  "dirs",
  "ed25519-dalek 2.2.0",
+ "hkdf",
+ "hmac 0.12.1",
+ "keyring",
+ "rand 0.8.5",
  "reqwest",
  "rsa 0.9.10",
+ "security-framework",
+ "security-framework-sys",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -2467,6 +2474,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyring"
+version = "3.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
+dependencies = [
+ "linux-keyutils",
+ "log",
+ "zeroize",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2511,6 +2529,16 @@ dependencies = [
  "cc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "linux-keyutils"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83270a18e9f90d0707c41e9f35efada77b64c0e6f3f1810e71c8368a864d5590"
+dependencies = [
+ "bitflags",
+ "libc",
 ]
 
 [[package]]

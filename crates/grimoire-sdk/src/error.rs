@@ -14,6 +14,9 @@ pub enum SdkError {
     #[error("Sync failed: {0}")]
     SyncFailed(String),
 
+    #[error("Authentication revoked by server")]
+    AuthRevoked,
+
     #[error("Item not found: {0}")]
     NotFound(String),
 

@@ -31,6 +31,24 @@ pub struct LoginState {
     pub server_url: String,
 }
 
+/// Data returned from unlock that is needed to build the vault cache.
+pub struct UnlockCacheData {
+    pub kdf: Kdf,
+    pub encrypted_user_key: String,
+    pub encrypted_private_key: String,
+    pub user_id: Option<String>,
+    pub password_hash: Zeroizing<String>,
+}
+
+/// Derive the master password hash locally from password + KDF params.
+/// No network calls — pure local crypto. Used for HMAC verification during
+/// cache-first unlock.
+pub fn derive_password_hash(password: &str, kdf: &Kdf, email: &str) -> Result<String, SdkError> {
+    let master_auth = MasterPasswordAuthenticationData::derive(password, kdf, email)
+        .map_err(|e| SdkError::AuthFailed(format!("Key derivation failed: {e}")))?;
+    Ok(master_auth.master_password_authentication_hash.to_string())
+}
+
 /// Token store shared with the SDK via `ClientManagedTokens`.
 ///
 /// The access token is stored in `Zeroizing<String>` so it is zeroed on drop.
@@ -88,11 +106,12 @@ impl AuthClient {
     }
 
     /// Unlock: verify credentials and initialize crypto so vault operations work.
+    /// Returns cache data needed to build/update the local vault cache.
     pub async fn unlock(
         &self,
         password: &Zeroizing<String>,
         login_state: &LoginState,
-    ) -> Result<(), SdkError> {
+    ) -> Result<UnlockCacheData, SdkError> {
         self.auth_and_init_crypto(&login_state.email, password, &login_state.server_url)
             .await
     }
@@ -140,12 +159,14 @@ impl AuthClient {
     /// 3. Login token request (our HTTP call) — get access token + encrypted keys
     /// 4. Store access token for API calls
     /// 5. Initialize user crypto (SDK) — decrypt vault keys
+    ///
+    /// Returns the data needed to build the vault cache.
     async fn auth_and_init_crypto(
         &self,
         email: &str,
         password: &str,
         server_url: &str,
-    ) -> Result<(), SdkError> {
+    ) -> Result<UnlockCacheData, SdkError> {
         let url = server_url.trim_end_matches('/');
         let http = reqwest::Client::new();
 
@@ -162,21 +183,26 @@ impl AuthClient {
             Some(Zeroizing::new(token_response.access_token.clone()));
 
         // Step 5: Initialize user crypto
-        let private_key: EncString = token_response
+        let private_key_str = token_response
             .private_key
             .as_ref()
             .ok_or_else(|| SdkError::AuthFailed("No private key in login response".into()))?
+            .clone();
+        let private_key: EncString = private_key_str
             .parse()
             .map_err(|e| SdkError::Internal(format!("Failed to parse private key: {e}")))?;
 
-        let user_key: EncString = token_response
+        let user_key_str = token_response
             .key
             .as_ref()
             .ok_or_else(|| SdkError::AuthFailed("No user key in login response".into()))?
+            .clone();
+        let user_key: EncString = user_key_str
             .parse()
             .map_err(|e| SdkError::Internal(format!("Failed to parse user key: {e}")))?;
 
         let user_id = user_id_from_jwt(&token_response.access_token);
+        let user_id_str = user_id.as_ref().map(|id| id.to_string());
 
         let pm = self.client.lock().await;
         let request = InitUserCryptoRequest {
@@ -190,7 +216,7 @@ impl AuthClient {
                 // once ownership transfers to the SDK.
                 password: password.to_string(),
                 master_password_unlock: MasterPasswordUnlockData {
-                    kdf,
+                    kdf: kdf.clone(),
                     master_key_wrapped_user_key: user_key,
                     salt: email.to_string(),
                 },
@@ -207,6 +233,65 @@ impl AuthClient {
                     SdkError::AuthFailed("Wrong master password".into())
                 } else {
                     SdkError::AuthFailed(format!("Failed to initialize crypto: {e}"))
+                }
+            })?;
+
+        Ok(UnlockCacheData {
+            kdf,
+            encrypted_user_key: user_key_str,
+            encrypted_private_key: private_key_str,
+            user_id: user_id_str,
+            password_hash: Zeroizing::new(password_hash),
+        })
+    }
+
+    /// Initialize SDK crypto from cached keys (no network calls).
+    /// Used for cache-first offline unlock.
+    pub async fn init_crypto_from_cache(
+        &self,
+        password: &str,
+        kdf: &Kdf,
+        email: &str,
+        encrypted_user_key: &str,
+        encrypted_private_key: &str,
+        user_id: Option<&str>,
+    ) -> Result<(), SdkError> {
+        let private_key: EncString = encrypted_private_key
+            .parse()
+            .map_err(|e| SdkError::Internal(format!("Failed to parse cached private key: {e}")))?;
+
+        let user_key: EncString = encrypted_user_key
+            .parse()
+            .map_err(|e| SdkError::Internal(format!("Failed to parse cached user key: {e}")))?;
+
+        let parsed_user_id = user_id.and_then(|s| s.parse().ok());
+
+        let pm = self.client.lock().await;
+        let request = InitUserCryptoRequest {
+            user_id: parsed_user_id,
+            kdf_params: kdf.clone(),
+            email: email.to_string(),
+            account_cryptographic_state: WrappedAccountCryptographicState::V1 { private_key },
+            method: InitUserCryptoMethod::MasterPasswordUnlock {
+                password: password.to_string(),
+                master_password_unlock: MasterPasswordUnlockData {
+                    kdf: kdf.clone(),
+                    master_key_wrapped_user_key: user_key,
+                    salt: email.to_string(),
+                },
+            },
+            upgrade_token: None,
+        };
+
+        pm.crypto()
+            .initialize_user_crypto(request)
+            .await
+            .map_err(|e| {
+                let msg = format!("{e}");
+                if msg.contains("Wrong") || msg.contains("wrong") {
+                    SdkError::AuthFailed("Wrong master password".into())
+                } else {
+                    SdkError::AuthFailed(format!("Failed to initialize crypto from cache: {e}"))
                 }
             })?;
 

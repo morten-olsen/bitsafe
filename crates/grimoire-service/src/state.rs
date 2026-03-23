@@ -259,18 +259,244 @@ impl ServiceState {
             });
         }
 
+        if self.sdk.is_none() {
+            return Err(SdkError::NotLoggedIn);
+        }
+
+        // Cache-first unlock: try local cache before hitting the network.
+        if let Some(envelope) = grimoire_sdk::cache::read_cache_file()? {
+            match self.unlock_from_cache(password, &envelope).await {
+                Ok(()) => {
+                    // Cache unlock succeeded. Try to get an access token for background
+                    // sync (best-effort with short timeout — don't block if offline).
+                    let token_info = self.login_state.as_ref().map(|ls| {
+                        (ls.email.clone(), ls.server_url.clone())
+                    });
+                    if let (Some((email, server_url)), Some(sdk)) = (token_info, &self.sdk) {
+                        match tokio::time::timeout(
+                            Duration::from_secs(3),
+                            sdk.auth().verify_password(&email, password, &server_url),
+                        )
+                        .await
+                        {
+                            Ok(Ok(())) => {
+                                tracing::debug!("Access token acquired after cache unlock");
+                            }
+                            Ok(Err(e)) => {
+                                tracing::debug!(
+                                    "Token refresh after cache unlock failed: {e}"
+                                );
+                            }
+                            Err(_) => {
+                                tracing::debug!(
+                                    "Token refresh timed out (continuing offline)"
+                                );
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+                Err(e) => {
+                    tracing::warn!("Cache unlock failed, falling through to online: {e}");
+                    // Recreate SDK client for online bootstrap (cache unlock may have
+                    // left the SDK in a bad state after a failed crypto init).
+                    if let Some(ref url) = self.server_url {
+                        self.sdk = Some(GrimoireClient::new(url).await);
+                    }
+                }
+            }
+        }
+
+        // No cache or cache unlock failed — online bootstrap
         let sdk = self.sdk.as_ref().ok_or(SdkError::NotLoggedIn)?;
         let login_state = self
             .login_state
             .as_ref()
             .ok_or(SdkError::Internal("No login state".into()))?;
 
-        sdk.auth().unlock(password, login_state).await?;
+        let cache_data = sdk.auth().unlock(password, login_state).await?;
         self.vault_state = VaultState::Unlocked;
         self.session = Some(Session::new());
         self.touch();
-        tracing::info!("Vault unlocked, session started");
+        tracing::info!("Vault unlocked (online bootstrap), session started");
+
+        // Build initial cache from the online unlock data.
+        // The cipher list will be empty until sync runs; sync_worker will update the cache.
+        self.build_cache(
+            &grimoire_sdk::cache::CachedKdf::from_kdf(&cache_data.kdf),
+            &cache_data.encrypted_user_key,
+            &cache_data.encrypted_private_key,
+            cache_data.user_id.as_deref(),
+            &cache_data.password_hash,
+            &[],
+            None,
+        );
+
         Ok(())
+    }
+
+    /// Unlock the vault from a local cache envelope.
+    async fn unlock_from_cache(
+        &mut self,
+        password: &Zeroizing<String>,
+        envelope: &grimoire_sdk::cache::CacheEnvelope,
+    ) -> Result<(), SdkError> {
+        let sdk = self.sdk.as_ref().ok_or(SdkError::NotLoggedIn)?;
+
+        // Load CEK from platform keystore
+        let keystore = grimoire_sdk::keystore::platform_keystore();
+        let cek = match &keystore {
+            Some(ks) => {
+                tracing::debug!("Using {} for CEK", ks.backend_name());
+                ks.load_cek()?
+            }
+            None => {
+                tracing::debug!("No platform keystore available");
+                None
+            }
+        };
+
+        // Decrypt the cache envelope
+        let cek_ref = cek.as_deref();
+        let cache = if envelope.is_encrypted() {
+            grimoire_sdk::cache::open_cache(envelope, cek_ref)?
+        } else {
+            // M2: warn if cache is unencrypted but a credential store is now available
+            if keystore.is_some() {
+                tracing::warn!(
+                    "Vault cache is not encrypted but a credential store is available — \
+                     consider logging out and back in to re-encrypt the cache with CEK"
+                );
+            }
+            grimoire_sdk::cache::open_cache(envelope, None)?
+        };
+
+        // Validate KDF floor (spec Vector 7 mitigation)
+        cache.kdf.validate_floor()?;
+
+        // Derive password hash and verify HMAC
+        let kdf = cache.kdf.to_kdf()?;
+        let password_hash =
+            grimoire_sdk::auth::derive_password_hash(password, &kdf, &cache.email)?;
+        if !cache.verify_hmac(&password_hash)? {
+            return Err(SdkError::AuthFailed("Wrong master password".into()));
+        }
+
+        // Initialize SDK crypto from cached keys
+        sdk.auth()
+            .init_crypto_from_cache(
+                password,
+                &kdf,
+                &cache.email,
+                &cache.encrypted_user_key,
+                &cache.encrypted_private_key,
+                cache.user_id.as_deref(),
+            )
+            .await?;
+
+        // Populate cipher repository from cached ciphers
+        sdk.sync().populate_from_cache(&cache.ciphers).await?;
+
+        self.vault_state = VaultState::Unlocked;
+        self.session = Some(Session::new());
+        self.last_sync = cache.last_sync;
+        self.touch();
+        tracing::info!(
+            last_sync = ?cache.last_sync,
+            cipher_count = cache.ciphers.len(),
+            "Vault unlocked from cache"
+        );
+
+        Ok(())
+    }
+
+    /// Build and write the vault cache to disk.
+    #[allow(clippy::too_many_arguments)]
+    fn build_cache(
+        &self,
+        kdf: &grimoire_sdk::cache::CachedKdf,
+        encrypted_user_key: &str,
+        encrypted_private_key: &str,
+        user_id: Option<&str>,
+        password_hash: &str,
+        ciphers: &[serde_json::Value],
+        last_sync: Option<DateTime<Utc>>,
+    ) {
+        let email = match &self.email {
+            Some(e) => e.clone(),
+            None => return,
+        };
+        let server_url = match &self.server_url {
+            Some(u) => u.clone(),
+            None => return,
+        };
+
+        let kdf_native = match kdf.to_kdf() {
+            Ok(k) => k,
+            Err(e) => {
+                tracing::warn!("Failed to convert cached KDF: {e}");
+                return;
+            }
+        };
+
+        let cache = match grimoire_sdk::cache::VaultCache::build(
+            &kdf_native,
+            encrypted_user_key.to_string(),
+            encrypted_private_key.to_string(),
+            user_id.map(String::from),
+            email,
+            server_url,
+            ciphers.to_vec(),
+            last_sync,
+            password_hash,
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("Failed to build vault cache: {e}");
+                return;
+            }
+        };
+
+        // Get CEK from keystore (generate if needed). Zeroizing ensures cleanup.
+        let keystore = grimoire_sdk::keystore::platform_keystore();
+        let cek: Option<zeroize::Zeroizing<[u8; 32]>> = match &keystore {
+            Some(ks) => match ks.load_cek() {
+                Ok(Some(k)) => Some(k),
+                Ok(None) => {
+                    // Generate and store a new CEK
+                    let new_cek = grimoire_sdk::keystore::generate_cek();
+                    if let Err(e) = ks.store_cek(&new_cek) {
+                        tracing::warn!("Failed to store CEK in {}: {e}", ks.backend_name());
+                        None
+                    } else {
+                        tracing::info!("Generated and stored CEK in {}", ks.backend_name());
+                        Some(new_cek)
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load CEK: {e}");
+                    None
+                }
+            },
+            None => {
+                tracing::warn!(
+                    "No OS credential store available — vault cache is protected by master password only"
+                );
+                None
+            }
+        };
+
+        let cek_ref = cek.as_deref();
+        match grimoire_sdk::cache::seal_cache(&cache, cek_ref) {
+            Ok(envelope) => {
+                if let Err(e) = grimoire_sdk::cache::write_cache_file(&envelope) {
+                    tracing::warn!("Failed to write vault cache: {e}");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to seal vault cache: {e}");
+            }
+        }
     }
 
     pub async fn lock(&mut self) -> Result<(), SdkError> {
@@ -300,6 +526,15 @@ impl ServiceState {
         self.sdk = None;
         self.login_state = None;
         grimoire_sdk::persist::clear_login_state();
+
+        // Delete vault cache and CEK (ADR 016)
+        grimoire_sdk::cache::delete_cache_file();
+        if let Some(ks) = grimoire_sdk::keystore::platform_keystore() {
+            if let Err(e) = ks.delete_cek() {
+                tracing::warn!("Failed to delete CEK on logout: {e}");
+            }
+        }
+
         tracing::info!("Logged out");
         Ok(())
     }

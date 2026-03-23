@@ -1,6 +1,8 @@
 pub mod auth;
+pub mod cache;
 pub mod crypto;
 pub mod error;
+pub mod keystore;
 pub mod persist;
 pub mod ssh;
 mod state;

@@ -272,6 +272,9 @@ After successful login, the service saves encrypted credentials to `~/.local/sha
 | Medium | CI actions not pinned to commit SHAs | Open — tag-based references are a supply chain risk |
 | Medium | `tokio` uses `features = ["full"]` | Open — wider attack surface than needed |
 | Low | PIN length leaked via timing | Accepted — acceptable for 4-6 digit PINs per design decision |
+| Medium | Offline vault cache on disk (`vault_cache.bin`) | Mitigated — envelope-encrypted with platform-bound CEK (macOS Keychain / Linux Secret Service). Fallback (no credential store) relies on master password KDF only. See ADR 016. |
+| Low | macOS CEK lacks biometric gate | Open — Keychain item stored without `kSecAccessControlUserPresence`; same-user processes can read silently. Device-binding still applies. |
+| Low | Background sync cannot update cache HMAC | Open — cache reflects vault state at last unlock; background sync detects changes but cannot re-sign without password hash |
 | Low | Error messages leak vault item names/counts | Open — `resolve_single_ref` includes names in errors |
 | Low | RUSTSEC-2023-0071 (RSA Marvin Attack) | Accepted — SDK transitive dep, no fix available, not exploitable over local socket |
 | Low | RUSTSEC-2026-0049 (rustls-webpki CRL) | Accepted — SDK transitive dep, no fix available |
